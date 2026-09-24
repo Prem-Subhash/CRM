@@ -88,4 +88,18 @@ export interface LendingStageHistory {
   remarks?: string;
   stage_data?: Record<string, any>;
   changed_at: string;
+  updater?: {
+    id: string;
+    full_name?: string;
+    email?: string;
+    role?: string;
+  } | null;
+  loan?: {
+    id: string;
+    borrower_name?: string;
+    loan_type?: string;
+    current_stage?: string;
+    status?: string;
+  } | null;
 }
+

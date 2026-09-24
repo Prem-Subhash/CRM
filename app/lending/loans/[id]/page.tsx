@@ -14,7 +14,8 @@ import {
   ShieldAlert,
   XCircle,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  Activity
 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { formatUSPhone } from '@/app/lending/lib/utils'
@@ -259,6 +260,18 @@ export default function LendingEditLoanFormPage() {
           <p className="text-slate-500 text-sm mt-1">
             Update existing intake data, borrower identity, partners, and banks.
           </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => router.push(`/lending/activity-log?deal=${loanId}`)}
+            className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition flex items-center gap-1.5"
+            title="View stage progression audit history for this loan"
+          >
+            <Activity size={14} className="text-[#10B889]" />
+            <span>Progression Audit Log</span>
+          </button>
         </div>
       </div>
 

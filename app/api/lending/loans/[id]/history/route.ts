@@ -9,7 +9,7 @@ export async function GET(
     const { id } = await params;
     const { data, error } = await supabaseServer
       .from('accurate_lending_stage_history')
-      .select('*')
+      .select('*, updater:profiles(id, full_name, email, role)')
       .eq('loan_id', id)
       .order('changed_at', { ascending: false });
 

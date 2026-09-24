@@ -210,17 +210,55 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     // Handle Stage History if stage changed
     if (existing.current_stage !== updatedLoan.current_stage) {
       try {
+        const systemNow = new Date().toISOString();
+        const progressionTimestamp = _changed_at_override ? new Date(_changed_at_override).toISOString() : systemNow;
         await supabaseServer.from('accurate_lending_stage_history').insert({
           loan_id: id,
           previous_stage: existing.current_stage,
           current_stage: updatedLoan.current_stage,
           updated_by: auth.user.id,
           remarks: _stage_remarks || null,
-          changed_at: _changed_at_override || new Date().toISOString(),
-          stage_data: _stage_data || {}
+          changed_at: progressionTimestamp,
+          stage_data: {
+            ...(_stage_data || {}),
+            event_type: 'STAGE_CHANGED',
+            system_timestamp: systemNow,
+            is_manual_date: Boolean(_changed_at_override),
+            manual_progression_date: _changed_at_override ? progressionTimestamp : null,
+            manual_reason: _changed_at_override ? (_stage_remarks || 'Manual progression date override') : null,
+            _updated_by: auth.user.email,
+          }
         });
       } catch (historyErr) {
         console.error('Failed to insert stage history:', historyErr);
+      }
+    }
+
+    // Handle Status History if status changed
+    if (existing.status && updatedLoan.status && existing.status !== updatedLoan.status) {
+      try {
+        const systemNow = new Date().toISOString();
+        const progressionTimestamp = _changed_at_override ? new Date(_changed_at_override).toISOString() : systemNow;
+        await supabaseServer.from('accurate_lending_stage_history').insert({
+          loan_id: id,
+          previous_stage: existing.status,
+          current_stage: updatedLoan.status,
+          updated_by: auth.user.id,
+          remarks: `Status changed from ${existing.status} to ${updatedLoan.status}`,
+          changed_at: progressionTimestamp,
+          stage_data: {
+            event_type: 'STATUS_CHANGED',
+            previous_status: existing.status,
+            new_status: updatedLoan.status,
+            system_timestamp: systemNow,
+            is_manual_date: Boolean(_changed_at_override),
+            manual_progression_date: _changed_at_override ? progressionTimestamp : null,
+            manual_reason: _changed_at_override ? (_stage_remarks || 'Manual status date override') : null,
+            _updated_by: auth.user.email,
+          }
+        });
+      } catch (statusHistoryErr) {
+        console.error('Failed to insert status history:', statusHistoryErr);
       }
     }
 
