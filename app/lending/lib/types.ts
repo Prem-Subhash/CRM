@@ -68,7 +68,7 @@ export interface AccurateLendingLoan {
   created_by?: string;
   
   // Custom UI fields that map to stage checks or notes
-  broker_commission?: number;
+  broker_commission?: number | string | null;
   estimated_credit_score?: number;
 
   // Relations (loaded for display)
