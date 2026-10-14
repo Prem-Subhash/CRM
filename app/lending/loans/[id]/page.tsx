@@ -201,7 +201,7 @@ export default function LendingEditLoanFormPage() {
         loan_summary: loanSummary,
         purchase_price: purchasePrice ? Number(purchasePrice) : null,
         down_payment_percent: downPayment ? Number(downPayment) : null,
-        // [Pending DB Update] broker_commission: brokerCommission,
+        broker_commission: brokerCommission ? Number(brokerCommission) : null,
         lead_source: leadSource,
         referral_name: referralName,
         current_stage: LENDING_STAGES[loanStage - 1],
@@ -484,18 +484,17 @@ export default function LendingEditLoanFormPage() {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold uppercase text-gray-700 mb-1.5 flex items-center gap-2">
-                      <span>Broker Commission ($)</span>
-                      <span className="text-[9px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded uppercase">[Pending DB Update]</span>
+                  <label className="block text-xs font-bold uppercase text-gray-700 mb-1.5">
+                    Broker Commission ($)
                   </label>
                   <div className="relative">
-                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400 font-bold">$</span>
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-500 font-bold">$</span>
                     <input
                       type="number"
-                      disabled
                       value={brokerCommission}
                       onChange={e => setBrokerCommission(e.target.value)}
-                      className="w-full pl-8 pr-4 py-3 bg-gray-100 border border-gray-200 rounded-xl text-base font-extrabold text-slate-400 cursor-not-allowed transition-all"
+                      placeholder="5000"
+                      className="w-full pl-8 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-base font-extrabold text-slate-900 focus:ring-2 focus:ring-teal-500 focus:bg-white transition-all"
                     />
                   </div>
                 </div>

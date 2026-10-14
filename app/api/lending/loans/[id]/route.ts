@@ -7,6 +7,7 @@ function sanitizePayloadForPostgres(payload: Record<string, any>): Record<string
   const NUMERIC_FIELDS = [
     'purchase_price',
     'down_payment_percent',
+    'broker_commission',
     'accutax_amount_requested',
     'accurate_lending_amount_requested',
     'internal_amount_received'
@@ -59,6 +60,21 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (auth.profile?.role !== 'superadmin' && auth.profile?.role !== 'admin') {
       if (data.assigned_user && data.assigned_user !== auth.user.id) {
          return NextResponse.json({ error: 'Access Denied' }, { status: 403 });
+      }
+    }
+
+    // If broker_commission is not directly populated, retrieve from stage_data history fallback
+    if (data.broker_commission === undefined || data.broker_commission === null) {
+      const { data: history } = await supabaseServer
+        .from('accurate_lending_stage_history')
+        .select('stage_data')
+        .eq('loan_id', id)
+        .not('stage_data->broker_commission', 'is', null)
+        .order('changed_at', { ascending: false })
+        .limit(1);
+
+      if (history && history.length > 0 && history[0].stage_data?.broker_commission !== undefined) {
+        data.broker_commission = Number(history[0].stage_data.broker_commission);
       }
     }
 
@@ -116,13 +132,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     
     // Drop fields that don't exist in the DB at all to prevent 400 errors
     delete rawPayload.estimated_credit_score;
-    delete rawPayload.broker_commission;
     delete rawPayload.stage;
     delete rawPayload.stage_name;
 
     const sanitizedPayload = sanitizePayloadForPostgres(rawPayload);
 
     // Update Loan
+    let finalLoan: any;
     const { data: updatedLoan, error: updateErr } = await supabaseServer
       .from('accurate_lending_loans')
       .update(sanitizedPayload)
@@ -131,7 +147,45 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       .single();
 
     if (updateErr) {
-      return NextResponse.json({ error: updateErr.message }, { status: 400 });
+      if (updateErr.code === '42703' || updateErr.message?.includes('broker_commission')) {
+        const fallbackPayload = { ...sanitizedPayload };
+        delete fallbackPayload.broker_commission;
+        const { data: retryLoan, error: retryErr } = await supabaseServer
+          .from('accurate_lending_loans')
+          .update(fallbackPayload)
+          .eq('id', id)
+          .select()
+          .single();
+
+        if (retryErr) {
+          return NextResponse.json({ error: retryErr.message }, { status: 400 });
+        }
+        finalLoan = { ...retryLoan, broker_commission: sanitizedPayload.broker_commission };
+      } else {
+        return NextResponse.json({ error: updateErr.message }, { status: 400 });
+      }
+    } else {
+      finalLoan = updatedLoan;
+    }
+
+    // Persist broker_commission in stage_data if modified or provided
+    if (sanitizedPayload.broker_commission !== undefined && sanitizedPayload.broker_commission !== null) {
+      try {
+        await supabaseServer.from('accurate_lending_stage_history').insert({
+          loan_id: id,
+          previous_stage: existing.current_stage,
+          current_stage: finalLoan.current_stage || existing.current_stage,
+          updated_by: auth.user.id,
+          remarks: 'Broker Commission Updated',
+          changed_at: new Date().toISOString(),
+          stage_data: {
+            broker_commission: sanitizedPayload.broker_commission,
+            _updated_by: auth.user.email,
+          }
+        });
+      } catch (e) {
+        console.error('Failed to log broker_commission update to stage history:', e);
+      }
     }
 
     // Handle Partners update (basic approach: delete and re-insert)
@@ -262,7 +316,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       }
     }
 
-    return NextResponse.json({ success: true, loan: updatedLoan });
+    return NextResponse.json({ success: true, loan: finalLoan });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Server error' }, { status: 500 });
   }
