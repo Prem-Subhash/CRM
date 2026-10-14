@@ -105,6 +105,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       return NextResponse.json({ error: 'Loan not found' }, { status: 404 });
     }
 
+    // Role-based access: regular lending officers may only update loans assigned to them
+    if (auth.profile?.role !== 'superadmin' && auth.profile?.role !== 'admin') {
+      if (existing.assigned_user && existing.assigned_user !== auth.user.id) {
+        return NextResponse.json({ error: 'Access Denied' }, { status: 403 });
+      }
+    }
+
     const { partners, banks, _stage_remarks, _changed_at_override, _stage_data, ...loanData } = body;
     delete loanData.assigned_user; // do not update officer unless explicitly handled
     delete loanData.id;

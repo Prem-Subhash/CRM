@@ -73,10 +73,6 @@ export default function LendingAddLoanFormPage() {
   }
 
   const handleRemovePartner = (id: string) => {
-    if (partners.length <= 1) {
-      toast('At least one partner is required', 'error')
-      return
-    }
     setPartners(partners.filter(p => p.id !== id))
   }
 
@@ -107,7 +103,9 @@ export default function LendingAddLoanFormPage() {
       return
     }
 
-    if (totalOwnership !== 100) {
+    const hasPartnerData = partners.length > 0 && partners.some(p => p.fullName?.trim() !== '' || (Number(p.ownership) || 0) > 0 || p.email?.trim() !== '' || p.mobile?.trim() !== '')
+
+    if (hasPartnerData && totalOwnership !== 100) {
       toast(`The total ownership percentage must equal exactly 100%.`, 'error')
       setActiveTab('tab2')
       return
@@ -133,12 +131,16 @@ export default function LendingAddLoanFormPage() {
         lead_source: leadSource,
         referral_name: referralName,
         current_stage: LENDING_STAGES[0],
-        partners: partners.map(p => ({
-          full_name: p.fullName,
-          mobile: p.mobile,
-          email: p.email,
-          ownership_percent: p.ownership
-        }))
+        partners: hasPartnerData
+          ? partners
+              .filter(p => p.fullName?.trim() !== '' || (Number(p.ownership) || 0) > 0)
+              .map(p => ({
+                full_name: p.fullName,
+                mobile: p.mobile,
+                email: p.email,
+                ownership_percent: p.ownership ? Number(p.ownership) : null
+              }))
+          : []
       }
 
       const res = await fetch('/api/lending/loans', {
@@ -467,13 +469,19 @@ export default function LendingAddLoanFormPage() {
               </div>
 
               <div className="space-y-4">
-                {partners.map((partner, idx) => (
-                  <div key={partner.id} className="p-5 bg-slate-50 border border-gray-200 rounded-2xl space-y-4 relative group">
-                    <div className="flex items-center justify-between border-b border-gray-200/60 pb-2.5">
-                      <span className="text-xs font-extrabold uppercase tracking-wider text-purple-900 bg-purple-100 px-2.5 py-0.5 rounded-full">
-                        Partner #{idx + 1}
-                      </span>
-                      {partners.length > 1 && (
+                {partners.length === 0 ? (
+                  <div className="p-6 text-center border-2 border-dashed border-gray-200 rounded-2xl bg-slate-50/50">
+                    <p className="text-xs text-slate-500">
+                      No partners added. If this loan has multiple owners or guarantors, click <strong className="text-slate-700">+ Add Another Partner</strong> above.
+                    </p>
+                  </div>
+                ) : (
+                  partners.map((partner, idx) => (
+                    <div key={partner.id} className="p-5 bg-slate-50 border border-gray-200 rounded-2xl space-y-4 relative group">
+                      <div className="flex items-center justify-between border-b border-gray-200/60 pb-2.5">
+                        <span className="text-xs font-extrabold uppercase tracking-wider text-purple-900 bg-purple-100 px-2.5 py-0.5 rounded-full">
+                          Partner #{idx + 1}
+                        </span>
                         <button
                           type="button"
                           onClick={() => handleRemovePartner(partner.id)}
@@ -482,8 +490,7 @@ export default function LendingAddLoanFormPage() {
                         >
                           <Trash2 size={16} />
                         </button>
-                      )}
-                    </div>
+                      </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                       <div>
@@ -558,26 +565,28 @@ export default function LendingAddLoanFormPage() {
                       </div>
                     </div>
                   </div>
-                ))}
+                )))}
 
-                <div className={`mt-4 p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${totalOwnership === 100 ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : totalOwnership > 100 ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
-                  <div className="flex items-center gap-2.5 font-bold">
-                    {totalOwnership === 100 ? (
-                      <CheckCircle2 size={20} className="text-emerald-600 shrink-0" />
-                    ) : totalOwnership > 100 ? (
-                      <XCircle size={20} className="text-rose-600 shrink-0" />
-                    ) : (
-                      <AlertCircle size={20} className="text-amber-600 shrink-0" />
-                    )}
-                    <span>
-                      {totalOwnership === 100 
-                        ? '✓ Total ownership is 100%.' 
-                        : totalOwnership > 100 
-                        ? `⚠ Total ownership exceeds 100% by ${totalOwnership - 100}%.`
-                        : `⚠ Remaining ownership: ${100 - totalOwnership}%.`}
-                    </span>
+                {partners.length > 0 && (
+                  <div className={`mt-4 p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors ${totalOwnership === 100 ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : totalOwnership > 100 ? 'bg-rose-50 border-rose-200 text-rose-800' : 'bg-amber-50 border-amber-200 text-amber-900'}`}>
+                    <div className="flex items-center gap-2.5 font-bold">
+                      {totalOwnership === 100 ? (
+                        <CheckCircle2 size={20} className="text-emerald-600 shrink-0" />
+                      ) : totalOwnership > 100 ? (
+                        <XCircle size={20} className="text-rose-600 shrink-0" />
+                      ) : (
+                        <AlertCircle size={20} className="text-amber-600 shrink-0" />
+                      )}
+                      <span>
+                        {totalOwnership === 100 
+                          ? '✓ Total ownership is 100%.' 
+                          : totalOwnership > 100 
+                          ? `⚠ Total ownership exceeds 100% by ${totalOwnership - 100}%.`
+                          : `⚠ Remaining ownership: ${100 - totalOwnership}%.`}
+                      </span>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             </div>
 
