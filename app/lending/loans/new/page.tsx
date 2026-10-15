@@ -119,7 +119,7 @@ export default function LendingAddLoanFormPage() {
         client_legal_name: clientLegalName,
         client_phone: clientPhone,
         client_email: clientEmail,
-        // [Pending DB Update] estimated_credit_score: clientCreditScore,
+        estimated_credit_score: clientCreditScore !== '' && !isNaN(Number(clientCreditScore)) ? Number(clientCreditScore) : null,
         loan_type: loanType,
         loan_purpose: loanPurpose,
         nature_of_loan: natureOfLoan,
@@ -271,13 +271,24 @@ export default function LendingAddLoanFormPage() {
                   />
                 </div>
 
-                <div className="sm:col-span-2">
+                <div>
                   <label className="block text-xs font-bold uppercase text-gray-700 mb-1.5">Client Email</label>
                   <input
                     type="email"
                     value={clientEmail}
                     onChange={e => setClientEmail(e.target.value)}
                     placeholder="rvance@apexlogistics.com"
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-[#10B889] focus:bg-white transition-all"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-700 mb-1.5">Estimated Credit Score</label>
+                  <input
+                    type="number"
+                    value={clientCreditScore}
+                    onChange={e => setClientCreditScore(e.target.value)}
+                    placeholder="e.g. 720"
                     className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-[#10B889] focus:bg-white transition-all"
                   />
                 </div>

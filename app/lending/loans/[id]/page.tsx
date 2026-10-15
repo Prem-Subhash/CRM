@@ -94,7 +94,7 @@ export default function LendingEditLoanFormPage() {
         setClientLegalName(data.client_legal_name || '')
         setClientPhone(data.client_phone || '')
         setClientEmail(data.client_email || '')
-        setClientCreditScore(data.estimated_credit_score?.toString() || '')
+        setClientCreditScore(data.estimated_credit_score !== null && data.estimated_credit_score !== undefined ? data.estimated_credit_score.toString() : '')
         setLoanType(data.loan_type || 'SBA 7a')
         setLoanPurpose(data.loan_purpose || 'Acquisition')
         setNatureOfLoan(data.nature_of_loan || 'Gas Station')
@@ -191,7 +191,7 @@ export default function LendingEditLoanFormPage() {
         client_legal_name: clientLegalName,
         client_phone: clientPhone,
         client_email: clientEmail,
-        // [Pending DB Update] estimated_credit_score: clientCreditScore,
+        estimated_credit_score: clientCreditScore !== '' && !isNaN(Number(clientCreditScore)) ? Number(clientCreditScore) : null,
         loan_type: loanType,
         loan_purpose: loanPurpose,
         nature_of_loan: natureOfLoan,
@@ -371,12 +371,22 @@ export default function LendingEditLoanFormPage() {
                     className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-[#10B889] focus:bg-white transition-all"
                   />
                 </div>
-                <div className="sm:col-span-2">
+                <div>
                   <label className="block text-xs font-bold uppercase text-gray-700 mb-1.5">Client Email</label>
                   <input
                     type="email"
                     value={clientEmail}
                     onChange={e => setClientEmail(e.target.value)}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-[#10B889] focus:bg-white transition-all"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-gray-700 mb-1.5">Estimated Credit Score</label>
+                  <input
+                    type="number"
+                    value={clientCreditScore}
+                    onChange={e => setClientCreditScore(e.target.value)}
+                    placeholder="e.g. 720"
                     className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm font-semibold focus:ring-2 focus:ring-[#10B889] focus:bg-white transition-all"
                   />
                 </div>

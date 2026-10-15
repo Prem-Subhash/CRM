@@ -8,6 +8,7 @@ function sanitizePayloadForPostgres(payload: Record<string, any>): Record<string
     'purchase_price',
     'down_payment_percent',
     'broker_commission',
+    'estimated_credit_score',
     'accutax_amount_requested',
     'accurate_lending_amount_requested',
     'internal_amount_received'
@@ -117,6 +118,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     delete loanData.id;
     delete loanData.created_at;
 
+    if (loanData.estimated_credit_score !== undefined && loanData.estimated_credit_score !== null && loanData.estimated_credit_score !== '') {
+      if (isNaN(Number(loanData.estimated_credit_score))) {
+        return NextResponse.json({ error: 'Estimated credit score must be a valid number.' }, { status: 400 });
+      }
+    }
+
     const rawPayload = {
       ...existing,
       ...loanData,
@@ -138,7 +145,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
     
     // Drop fields that don't exist in the DB at all to prevent 400 errors
-    delete rawPayload.estimated_credit_score;
     delete rawPayload.stage;
     delete rawPayload.stage_name;
 

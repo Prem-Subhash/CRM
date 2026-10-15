@@ -8,6 +8,7 @@ function sanitizePayloadForPostgres(payload: Record<string, any>): Record<string
     'purchase_price',
     'down_payment_percent',
     'broker_commission',
+    'estimated_credit_score',
     'accutax_amount_requested',
     'accurate_lending_amount_requested',
     'internal_amount_received'
@@ -117,6 +118,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (loanData.estimated_credit_score !== undefined && loanData.estimated_credit_score !== null && loanData.estimated_credit_score !== '') {
+      if (isNaN(Number(loanData.estimated_credit_score))) {
+        return NextResponse.json({ error: 'Estimated credit score must be a valid number.' }, { status: 400 });
+      }
+    }
+
     const rawPayload = {
       current_stage: loanData.current_stage || '1. New Loan',
       inquiry_date: loanData.inquiry_date || new Date().toISOString().split('T')[0],
@@ -124,6 +131,7 @@ export async function POST(request: NextRequest) {
       client_legal_name: loanData.client_legal_name || null,
       client_phone: loanData.client_phone || null,
       client_email: loanData.client_email || null,
+      estimated_credit_score: loanData.estimated_credit_score !== undefined ? loanData.estimated_credit_score : null,
       loan_type: loanData.loan_type || 'COMMERCIAL',
       loan_purpose: loanData.loan_purpose || null,
       nature_of_loan: loanData.nature_of_loan || null,
