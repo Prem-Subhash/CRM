@@ -32,7 +32,7 @@ export interface LendingLoanBank {
   bank_amount_requested?: number;
   bank_amount_received?: number;
   // Temporary UI fields used before save
-  lender_bank?: string; 
+  lender_bank?: string;
   is_custom_bank?: boolean;
   display_order?: number;
   is_final_lender?: boolean;
@@ -54,22 +54,22 @@ export interface AccurateLendingLoan {
   loan_summary?: string;
   purchase_price?: number;
   down_payment_percent?: number;
-  
+
   // Amounts
   accutax_amount_requested?: number;
   accurate_lending_amount_requested?: number;
   internal_amount_received?: number;
-  
+
   lead_source?: string;
   referral_name?: string;
   current_stage?: string;
   status?: string;
   assigned_user?: string;
   created_by?: string;
-  
+
   // Custom UI fields that map to stage checks or notes
-  broker_commission?: number;
-  estimated_credit_score?: number;
+  broker_commission?: number | string | null;
+  estimated_credit_score?: number | null;
 
   // Relations (loaded for display)
   partners?: LendingPartner[];
@@ -88,4 +88,18 @@ export interface LendingStageHistory {
   remarks?: string;
   stage_data?: Record<string, any>;
   changed_at: string;
+  updater?: {
+    id: string;
+    full_name?: string;
+    email?: string;
+    role?: string;
+  } | null;
+  loan?: {
+    id: string;
+    borrower_name?: string;
+    loan_type?: string;
+    current_stage?: string;
+    status?: string;
+  } | null;
 }
+

@@ -39,7 +39,8 @@ export default function UpdateStageModal({ loan, onClose, onSuccess }: Props) {
         body: JSON.stringify({
           stageName: modalStage,
           stageMetadata: formData,
-          remarks: remarks || null
+          remarks: remarks || null,
+          changedAtOverride: overrideDate ? new Date(overrideDate).toISOString() : null
         })
       })
 
@@ -159,9 +160,12 @@ export default function UpdateStageModal({ loan, onClose, onSuccess }: Props) {
             )}
 
             <div>
-              <label className="block text-xs font-bold uppercase text-gray-700 mb-1.5">Manual Date Override (Optional)</label>
+              <label className="block text-xs font-bold uppercase text-gray-700 mb-1.5 flex items-center justify-between">
+                <span>Manual Progression Date (Optional)</span>
+                <span className="text-[10px] text-gray-400 font-normal lowercase">defaults to current server time</span>
+              </label>
               <input 
-                type="date"
+                type="datetime-local"
                 value={overrideDate}
                 onChange={e => setOverrideDate(e.target.value)}
                 className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-[#10B889]"
