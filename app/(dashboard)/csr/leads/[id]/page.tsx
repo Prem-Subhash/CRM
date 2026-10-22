@@ -224,7 +224,7 @@ export default function LeadReviewPage() {
           .select(`
             *,
             lead_policies(policy_type),
-            pipeline_stages (
+            pipeline_stages!temp_leads_basics_stage_pipeline_fk (
               id,
               stage_name
             )
@@ -303,7 +303,7 @@ export default function LeadReviewPage() {
         .select(`
             *,
             lead_policies(policy_type),
-            pipeline_stages (
+            pipeline_stages!temp_leads_basics_stage_pipeline_fk (
             id,
             stage_name
           )

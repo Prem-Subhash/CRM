@@ -248,7 +248,7 @@ export default function CSRWorkloadPage() {
         policy_type,
           lead_policies(policy_type),
         created_at,
-        current_stage:pipeline_stages (
+        current_stage:pipeline_stages!temp_leads_basics_stage_pipeline_fk (
           stage_name
         )
       `)

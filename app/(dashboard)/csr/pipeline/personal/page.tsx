@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import { Eye, Search, AlertCircle, FileText, CheckCircle2, Clock } from 'lucide-react'
-import { extractDigits, normalizePhoneSearch, formatDatabasePhone } from '@/utils/phoneFormatter'
+import { extractDigits, normalizePhoneSearch, formatDatabasePhone, formatPhoneInput } from '@/utils/phoneFormatter'
 import { formatPolicies } from '@/utils/formatPolicies'
 import Loading, { Spinner } from '@/components/ui/Loading'
 
@@ -42,6 +42,11 @@ export default function PersonalLinesPage({ createRoute }: { createRoute?: strin
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [page, setPage] = useState(0)
+  const [totalCount, setTotalCount] = useState(0)
+
+  useEffect(() => {
+    setPage(0)
+  }, [stageFilter, searchTerm])
 
   useEffect(() => {
     const loadLeads = async () => {
@@ -68,10 +73,10 @@ export default function PersonalLinesPage({ createRoute }: { createRoute?: strin
           lead_policies(policy_type),
           policy_flow,
           created_at,
-          current_stage:pipeline_stages!inner (
+          current_stage:pipeline_stages!temp_leads_basics_stage_pipeline_fk!inner (
             stage_name
           )
-        `)
+        `, { count: 'exact' })
 
       if (!isGlobalView) {
         query = query.eq('assigned_csr', user.id)
@@ -80,18 +85,41 @@ export default function PersonalLinesPage({ createRoute }: { createRoute?: strin
       query = query
         .eq('insurence_category', 'personal')
         .eq('policy_flow', 'new')
-        .order('created_at', { ascending: false })
-        .range(page * 10, (page + 1) * 10 - 1)
 
       if (stageFilter) {
         query = query.eq('current_stage.stage_name', stageFilter)
       }
 
-      const { data, error } = await query
+      const trimmedSearch = searchTerm.trim()
+      if (trimmedSearch) {
+        const digits = extractDigits(trimmedSearch)
+        const formatted = digits ? formatPhoneInput(digits) : ''
+
+        const searchOrs: string[] = [
+          `client_name.ilike.%${trimmedSearch}%`,
+          `email.ilike.%${trimmedSearch}%`,
+          `phone.ilike.%${trimmedSearch}%`
+        ]
+        if (digits && digits !== trimmedSearch) {
+          searchOrs.push(`phone.ilike.%${digits}%`)
+        }
+        if (formatted && formatted !== trimmedSearch && formatted !== digits) {
+          searchOrs.push(`phone.ilike.%${formatted}%`)
+        }
+        query = query.or(searchOrs.join(','))
+      }
+
+      query = query
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false })
+        .range(page * 10, (page + 1) * 10 - 1)
+
+      const { data, error, count } = await query
 
       if (error) {
         console.error(error)
         setLeads([])
+        setTotalCount(0)
       } else {
         const formatted = (data as any[]).map(row => ({
           ...row,
@@ -101,13 +129,14 @@ export default function PersonalLinesPage({ createRoute }: { createRoute?: strin
         }))
 
         setLeads(formatted)
+        setTotalCount(count ?? formatted.length)
       }
 
       setLoading(false)
     }
 
     loadLeads()
-  }, [stageFilter, page])
+  }, [stageFilter, page, searchTerm])
 
   const applyFilter = (stage: string | null) => {
     setPage(0)
@@ -118,18 +147,7 @@ export default function PersonalLinesPage({ createRoute }: { createRoute?: strin
     }
   }
 
-  const filteredLeads = leads.filter(lead => {
-    const term = searchTerm.toLowerCase()
-    const termDigits = extractDigits(searchTerm)
-    const dbPhoneStr = lead.phone || ''
-
-    return (
-      (lead.client_name && lead.client_name.toLowerCase().includes(term)) ||
-      (lead.email && lead.email.toLowerCase().includes(term)) ||
-      dbPhoneStr.includes(term) ||
-      (termDigits.length > 0 && extractDigits(dbPhoneStr).includes(termDigits))
-    )
-  })
+  const filteredLeads = leads
 
   return (
     <div className="w-full">
@@ -189,7 +207,7 @@ export default function PersonalLinesPage({ createRoute }: { createRoute?: strin
             />
           </div>
           <div className="text-sm text-gray-500 font-medium whitespace-nowrap">
-            {filteredLeads.length} Lead{filteredLeads.length !== 1 && 's'} Found
+            {totalCount} Lead{totalCount !== 1 && 's'} Found
           </div>
         </div>
 
@@ -283,7 +301,7 @@ export default function PersonalLinesPage({ createRoute }: { createRoute?: strin
           </span>
           <button
             onClick={() => setPage(p => p + 1)}
-            disabled={leads.length < 10 || loading}
+            disabled={(page + 1) * 10 >= totalCount || loading}
             className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Next

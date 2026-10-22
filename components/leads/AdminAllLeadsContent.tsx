@@ -80,7 +80,7 @@ export function AdminAllLeadsContent({ categoryProp, flowProp }: { categoryProp?
           insurence_category,
           policy_flow,
           created_at,
-          current_stage:pipeline_stages${stageFilter ? '!inner' : ''} (
+          current_stage:pipeline_stages!temp_leads_basics_stage_pipeline_fk${stageFilter ? '!inner' : ''} (
             stage_name
           ),
           assigned_csr_profile:profiles!fk_profile (

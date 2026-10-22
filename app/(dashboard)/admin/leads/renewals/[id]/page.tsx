@@ -54,7 +54,7 @@ export default function AdminRenewalDetailPage() {
         business_name,
         insurence_category,
         savings,
-        pipeline_stages (
+        pipeline_stages!temp_leads_basics_stage_pipeline_fk (
           id,
           stage_name,
           stage_order,

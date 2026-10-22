@@ -483,6 +483,22 @@ export async function POST(req: Request) {
         )
       }
 
+      if (rpcRes?.policy_term_id && isCommissionEnabledTransition) {
+        await supabaseServer
+          .from('policy_terms')
+          .update({
+            gross_commission: updatePayload.gross_commission,
+            admin_charge: updatePayload.admin_charge,
+            net_commission: updatePayload.net_commission,
+            referral_payout: updatePayload.referral_payout,
+            company_commission: updatePayload.company_commission,
+            expected_commission: updatePayload.expected_commission,
+            locked_carrier_percent: updatePayload.locked_carrier_percent,
+            locked_referral_percent: updatePayload.locked_referral_percent,
+          })
+          .eq('id', rpcRes.policy_term_id)
+      }
+
       return NextResponse.json({ success: true, ...rpcRes })
     }
 

@@ -27,7 +27,7 @@ export default function DebugRenewalsPage() {
             // 3. Test Relationship (The likely breaker)
             const { error: relError } = await supabase
                 .from('temp_leads_basics')
-                .select('id, pipeline_stages(stage_name)')
+                .select('id, pipeline_stages!temp_leads_basics_stage_pipeline_fk(stage_name)')
                 .limit(1)
 
             if (relError) {
