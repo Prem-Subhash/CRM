@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { Calendar, Download, Filter, FileText, FileSpreadsheet } from 'lucide-react'
+import { Calendar, Download, Filter, FileText, FileSpreadsheet, ChevronLeft, ChevronRight } from 'lucide-react'
 import { supabase } from '@/lib/supabaseClient'
 import { toast } from '@/lib/toast'
 import Loading, { Spinner } from '@/components/ui/Loading'
@@ -41,6 +41,7 @@ export default function MonthlyReportPage() {
     const [data, setData] = useState<any[]>([])
     const [filteredData, setFilteredData] = useState<any[]>([])
     const [totalRecords, setTotalRecords] = useState(0)
+    const [page, setPage] = useState(1)
     const [csrs, setCsrs] = useState<any[]>([])
     const [isLOBDropdownOpen, setIsLOBDropdownOpen] = useState(false)
 
@@ -52,8 +53,9 @@ export default function MonthlyReportPage() {
         loadCsrs()
     }, [])
 
-    const loadReport = async () => {
+    const loadReport = async (targetPage: number = 1) => {
         setLoading(true)
+        setPage(targetPage)
         try {
             const payload = {
                 start_date: filters.fromDate,
@@ -65,7 +67,7 @@ export default function MonthlyReportPage() {
                 customer_name: filters.clientName,
                 policy_flow: filters.flow,
                 exportType: 'json',
-                page: 1,
+                page: targetPage,
                 limit: 50
             }
 
@@ -120,6 +122,7 @@ export default function MonthlyReportPage() {
         setData([])
         setFilteredData([])
         setTotalRecords(0)
+        setPage(1)
         toast('Filters and Report Preview have been cleared.', 'success')
     }
 
@@ -396,13 +399,10 @@ export default function MonthlyReportPage() {
                                 </label>
                                 <select
                                     value={filters.csr}
-                                    onChange={e => setFilters({ ...filters, csr: e.target.value })}
-                                    className="w-full min-w-0 px-2 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none transition-all min-h-[44px]"
+                                    disabled
+                                    className="w-full min-w-0 px-2 py-2 bg-gray-100 border border-gray-200 rounded-lg text-xs text-gray-600 cursor-not-allowed outline-none min-h-[44px]"
                                 >
-                                    <option value="">All CSRs</option>
-                                    {csrs.map(c => (
-                                        <option key={c.id} value={c.id}>{c.full_name || c.email}</option>
-                                    ))}
+                                    <option value="">My Assigned Leads</option>
                                 </select>
                             </div>
                             <div className="flex flex-col gap-1 min-w-0">
@@ -441,7 +441,7 @@ export default function MonthlyReportPage() {
                         * Filtering by <span className="font-bold text-gray-600">{filters.dateType === 'effective' ? 'Effective Date' : 'Expiration Date'}</span>
                     </div>
                     <button
-                        onClick={loadReport}
+                        onClick={() => loadReport(1)}
                         disabled={loading}
                         className="bg-brand text-white px-6 py-2.5 sm:px-8 sm:py-3 rounded-xl hover:bg-brand/80 transition-all shadow-lg shadow-blue-900/10 hover:shadow-blue-900/20 font-bold flex items-center gap-2 text-sm w-full sm:w-auto justify-center active:scale-95 disabled:opacity-70"
                     >
@@ -479,91 +479,134 @@ export default function MonthlyReportPage() {
                 {loading ? (
                     <Loading message="Generating report preview..." />
                 ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left table-fixed min-w-[1200px]">
-                            <colgroup>
-                                <col className="w-[240px]" />
-                                <col className="w-[180px]" />
-                                <col className="w-[160px]" />
-                                <col className="w-[150px]" />
-                                <col className="w-[130px]" />
-                                <col className="w-[200px]" />
-                                <col className="w-[140px]" />
-                            </colgroup>
-                            <thead className="bg-gradient-to-r from-[#10B889] to-[#2E5C85] text-white uppercase text-xs tracking-wider font-semibold border-b border-gray-200/60">
-                                <tr>
-                                    <th className="px-4 sm:px-6 py-4">Client</th>
-                                    <th className="px-4 sm:px-6 py-4">Type</th>
-                                    <th className="px-4 sm:px-6 py-4">Category</th>
-                                    <th className="px-4 sm:px-6 py-4">Flow</th>
-                                    <th className="px-4 sm:px-6 py-4">Premium</th>
-                                    <th className="px-4 sm:px-6 py-4">CSR</th>
-                                    <th className="px-4 sm:px-6 py-4">Date</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-100">
-                                {data.length === 0 ? (
+                    <>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left table-fixed min-w-[1200px]">
+                                <colgroup>
+                                    <col className="w-[240px]" />
+                                    <col className="w-[180px]" />
+                                    <col className="w-[160px]" />
+                                    <col className="w-[150px]" />
+                                    <col className="w-[130px]" />
+                                    <col className="w-[200px]" />
+                                    <col className="w-[140px]" />
+                                </colgroup>
+                                <thead className="bg-gradient-to-r from-[#10B889] to-[#2E5C85] text-white uppercase text-xs tracking-wider font-semibold border-b border-gray-200/60">
                                     <tr>
-                                        <td colSpan={7} className="px-6 py-16 text-center">
-                                            <div className="flex flex-col items-center justify-center">
-                                                <div className="w-14 h-14 bg-gray-50 rounded-full flex items-center justify-center mb-4">
-                                                    <Filter size={28} className="text-gray-300" />
-                                                </div>
-                                                <h3 className="text-base font-semibold text-gray-900 mb-1">No Data Available</h3>
-                                                <p className="text-gray-500 text-sm max-w-xs mx-auto">
-                                                    Adjust the filters above and click "Generate Report" to view results.
-                                                </p>
-                                            </div>
-                                        </td>
+                                        <th className="px-4 sm:px-6 py-4">Client</th>
+                                        <th className="px-4 sm:px-6 py-4">Type</th>
+                                        <th className="px-4 sm:px-6 py-4">Category</th>
+                                        <th className="px-4 sm:px-6 py-4">Flow</th>
+                                        <th className="px-4 sm:px-6 py-4">Premium</th>
+                                        <th className="px-4 sm:px-6 py-4">CSR</th>
+                                        <th className="px-4 sm:px-6 py-4">Date</th>
                                     </tr>
-                                ) : (filteredData.map((row: any, index: number) => {
-                                    const active = getActivePolicy(row)
-                                    return (
-                                    <tr key={row.id} className="hover:bg-blue-50/30 transition-colors group">
-                                        <td className="px-4 sm:px-6 py-4 font-medium text-gray-900 break-words align-top">
-                                            {row.client_name}
-                                        </td>
-                                        <td className="px-4 sm:px-6 py-4 align-top">
-                                            <span className="px-2.5 py-1 bg-gray-100 text-gray-700 rounded text-xs border border-gray-200 font-medium capitalize break-words inline-block">
-                                                {row.policy_type}
-                                            </span>
-                                        </td>
-                                        <td className="px-4 sm:px-6 py-4 capitalize text-gray-600 break-words align-top">
-                                            {row.insurence_category}
-                                        </td>
-                                        <td className="px-4 sm:px-6 py-4 align-top">
-                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border capitalize whitespace-nowrap
-                                                ${row.policy_flow === 'new'
-                                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                                                    : 'bg-amber-50 text-amber-700 border-amber-100'
-                                                }
-                                            `}>
-                                                {row.policy_flow === 'new' ? 'New Business' : 'Renewal'}
-                                            </span>
-                                        </td>
-                                        <td className="px-4 sm:px-6 py-4 font-semibold text-gray-900 align-top">
-                                            {formatCurrency(active.activePremium || row.total_premium)}
-                                        </td>
-                                        <td className="px-4 sm:px-6 py-4 text-gray-600 align-top">
-                                            <div className="flex items-start gap-2">
-                                                <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold ring-2 ring-white flex-shrink-0 mt-0.5">
-                                                    {(row.assigned_csr_profile?.name || row.assigned_user_profile?.full_name || 'U')[0]}
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                    {data.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={7} className="px-6 py-16 text-center">
+                                                <div className="flex flex-col items-center justify-center">
+                                                    <div className="w-14 h-14 bg-gray-50 rounded-full flex items-center justify-center mb-4">
+                                                        <Filter size={28} className="text-gray-300" />
+                                                    </div>
+                                                    <h3 className="text-base font-semibold text-gray-900 mb-1">No Data Available</h3>
+                                                    <p className="text-gray-500 text-sm max-w-xs mx-auto">
+                                                        Adjust the filters above and click "Generate Report" to view results.
+                                                    </p>
                                                 </div>
-                                                <span className="text-sm break-words">
-                                                    {row.assigned_csr_profile?.name || row.assigned_user_profile?.full_name || row.assigned_csr || 'Unknown'}
+                                            </td>
+                                        </tr>
+                                    ) : (filteredData.map((row: any, index: number) => {
+                                        const active = getActivePolicy(row)
+                                        return (
+                                        <tr key={row.id} className="hover:bg-blue-50/30 transition-colors group">
+                                            <td className="px-4 sm:px-6 py-4 font-medium text-gray-900 break-words align-top">
+                                                {row.client_name}
+                                            </td>
+                                            <td className="px-4 sm:px-6 py-4 align-top">
+                                                <span className="px-2.5 py-1 bg-gray-100 text-gray-700 rounded text-xs border border-gray-200 font-medium capitalize break-words inline-block">
+                                                    {row.policy_type}
                                                 </span>
-                                            </div>
-                                        </td>
-                                        <td className="px-4 sm:px-6 py-4 text-gray-500 font-mono text-xs whitespace-nowrap align-top">
-                                            {filters.dateType === 'effective'
-                                                ? (row.effective_date || '-')
-                                                : (row.renewal_date || row.effective_date || '-')}
-                                        </td>
-                                    </tr>
-                                )}))}
-                            </tbody>
-                        </table>
-                    </div>
+                                            </td>
+                                            <td className="px-4 sm:px-6 py-4 capitalize text-gray-600 break-words align-top">
+                                                {row.insurence_category}
+                                            </td>
+                                            <td className="px-4 sm:px-6 py-4 align-top">
+                                                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border capitalize whitespace-nowrap
+                                                    ${row.policy_flow === 'new'
+                                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                                                        : 'bg-amber-50 text-amber-700 border-amber-100'
+                                                    }
+                                                `}>
+                                                    {row.policy_flow === 'new' ? 'New Business' : 'Renewal'}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 sm:px-6 py-4 font-semibold text-gray-900 align-top">
+                                                {formatCurrency(active.activePremium || row.total_premium)}
+                                            </td>
+                                            <td className="px-4 sm:px-6 py-4 text-gray-600 align-top">
+                                                <div className="flex items-start gap-2">
+                                                    <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold ring-2 ring-white flex-shrink-0 mt-0.5">
+                                                        {(row.assigned_csr_profile?.name || row.assigned_user_profile?.full_name || 'U')[0]}
+                                                    </div>
+                                                    <span className="text-sm break-words">
+                                                        {row.assigned_csr_profile?.name || row.assigned_user_profile?.full_name || row.assigned_csr || 'Unknown'}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                            <td className="px-4 sm:px-6 py-4 text-gray-500 font-mono text-xs whitespace-nowrap align-top">
+                                                {filters.dateType === 'effective'
+                                                    ? (row.effective_date || '-')
+                                                    : (row.renewal_date || row.effective_date || '-')}
+                                            </td>
+                                        </tr>
+                                    )}))}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        {/* Pagination Bar */}
+                        {(() => {
+                            const limit = 50
+                            const totalPages = Math.max(1, Math.ceil(totalRecords / limit))
+                            const startRecord = totalRecords === 0 ? 0 : (page - 1) * limit + 1
+                            const endRecord = Math.min(page * limit, totalRecords)
+
+                            return (
+                                <div className="p-4 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4 bg-gray-50/50">
+                                    <div className="text-xs text-gray-600 font-medium">
+                                        {totalRecords === 0 ? (
+                                            'Showing 0 records'
+                                        ) : (
+                                            `Showing ${startRecord}–${endRecord} of ${totalRecords} records`
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => loadReport(page - 1)}
+                                            disabled={page <= 1 || loading}
+                                            className="flex items-center gap-1 px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-semibold text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                                        >
+                                            <ChevronLeft size={14} />
+                                            Previous
+                                        </button>
+                                        <span className="text-xs font-medium text-gray-600 px-2">
+                                            Page {totalRecords === 0 ? 0 : page} of {totalPages}
+                                        </span>
+                                        <button
+                                            onClick={() => loadReport(page + 1)}
+                                            disabled={page >= totalPages || totalRecords === 0 || loading}
+                                            className="flex items-center gap-1 px-3 py-1.5 border border-gray-300 rounded-lg text-xs font-semibold text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                                        >
+                                            Next
+                                            <ChevronRight size={14} />
+                                        </button>
+                                    </div>
+                                </div>
+                            )
+                        })()}
+                    </>
                 )}
             </div>
         </div>

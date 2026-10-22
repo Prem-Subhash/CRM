@@ -4,7 +4,7 @@ import { cookies } from 'next/headers'
 
 // Admin Client (Bypasses RLS - keep for existing API usage)
 export const supabaseServer = createSupabaseClient(
-  process.env.SUPABASE_URL!,
+  (process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL)!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
   {
     auth: {
@@ -27,8 +27,14 @@ export const createServer = async () => {
         },
         setAll(cookiesToSet) {
           try {
+            const isRememberMeFalse = cookieStore.get('sb-remember-me')?.value === 'false'
             cookiesToSet.forEach(({ name, value, options }) => {
-              cookieStore.set(name, value, options)
+              const cookieOpts = { ...options }
+              if (isRememberMeFalse && value !== '') {
+                delete cookieOpts.maxAge
+                delete cookieOpts.expires
+              }
+              cookieStore.set(name, value, cookieOpts)
             })
           } catch (error) {
             // The `setAll` method was called from a Server Component.

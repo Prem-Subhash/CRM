@@ -83,7 +83,8 @@ export async function proxy(request: NextRequest) {
     ]
     const isProtectedApiRoute = protectedApiRoutes.some((route) => pathname.startsWith(route))
 
-    if (isProtectedApiRoute && !user) {
+    const authHeader = request.headers.get('authorization')
+    if (isProtectedApiRoute && !user && (!authHeader || !authHeader.startsWith('Bearer '))) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 

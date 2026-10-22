@@ -218,7 +218,7 @@ function AdminNewLeadContent() {
   const checkDuplicateActiveLead = async (clientId: string) => {
     const { data } = await supabase
       .from("temp_leads_basics")
-      .select("id, policy_type, current_stage:pipeline_stages(stage_name)")
+      .select("id, policy_type, current_stage:pipeline_stages!temp_leads_basics_stage_pipeline_fk(stage_name)")
       .eq("client_id", clientId)
       .eq("policy_flow", form.policy_flow)
       .not("current_stage.stage_name", "in", '("Completed","Did Not Bind")');
@@ -313,6 +313,22 @@ function AdminNewLeadContent() {
             : "f77d068d-1754-421b-b2ce-d527ec8bd0f3";
       }
 
+      // Explicit DE05 Stage Resolution: Fetch stage_order = 1 for target pipeline
+      const { data: initialStage, error: stageErr } = await supabase
+        .from("pipeline_stages")
+        .select("id")
+        .eq("pipeline_id", finalPipelineId)
+        .order("stage_order", { ascending: true })
+        .limit(1)
+        .single();
+
+      if (stageErr || !initialStage) {
+        setError("Workflow Error: Initial stage not found for the selected pipeline. Submission halted.");
+        setLoading(false);
+        setIsLocked(false);
+        return;
+      }
+
       const leadsToInsert = selectedPolicies.map((policy) => {
         const { 
           policy_type: _, 
@@ -342,6 +358,7 @@ function AdminNewLeadContent() {
           client_id: clientId,
           assigned_csr: null,
           pipeline_id: finalPipelineId,
+          current_stage_id: initialStage.id,
           lead_group_id: leadGroupId,
         };
       });

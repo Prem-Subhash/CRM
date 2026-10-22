@@ -86,34 +86,66 @@ export default function LeadAccountingClient({
   const [isUpdatingCommission, setIsUpdatingCommission] = useState(false)
   const [isVerifyingPolicy, setIsVerifyingPolicy] = useState(false)
 
-  // --- Financial Values from Database (Authoritative Active Term read) ---
+  // --- Financial Values from Database (Authoritative Active Term & Lead Fallback read) ---
+  const getCommissionVal = (termVal: any, leadVal: any, fallbackVal: number = 0) => {
+    const termNum = termVal !== null && termVal !== undefined ? Number(termVal) : null
+    const leadNum = leadVal !== null && leadVal !== undefined ? Number(leadVal) : null
+
+    if (termNum !== null && termNum > 0) return termNum
+    if (leadNum !== null && leadNum > 0) return leadNum
+    if (termNum !== null) return termNum
+    if (leadNum !== null) return leadNum
+    return fallbackVal
+  }
+
   const boundPremium = Number(
     activeTerm?.written_premium ?? active.activePremium ?? lead.total_premium ?? 0
   )
-  const carrierRate = lead.locked_carrier_percent !== null && lead.locked_carrier_percent !== undefined ? Number(lead.locked_carrier_percent) : null
-  const grossCommission = Number(
-    activeTerm?.gross_commission ?? activeTerm?.expected_commission ?? lead.gross_commission ?? lead.expected_commission ?? 0
+  const carrierRate = activeTerm?.locked_carrier_percent !== null && activeTerm?.locked_carrier_percent !== undefined
+    ? Number(activeTerm.locked_carrier_percent)
+    : (lead.locked_carrier_percent !== null && lead.locked_carrier_percent !== undefined ? Number(lead.locked_carrier_percent) : null)
+
+  const grossCommission = getCommissionVal(
+    activeTerm?.gross_commission ?? activeTerm?.expected_commission,
+    lead.gross_commission ?? lead.expected_commission
   )
-  const adminCharge = Number(
-    activeTerm?.admin_charge ?? lead.admin_charge ?? 0
+
+  const adminCharge = getCommissionVal(
+    activeTerm?.admin_charge,
+    lead.admin_charge
   )
-  const netCommission = Number(
-    activeTerm?.net_commission ?? lead.net_commission ?? (grossCommission - adminCharge)
+
+  const netCommission = getCommissionVal(
+    activeTerm?.net_commission,
+    lead.net_commission,
+    grossCommission - adminCharge
   )
+
   const referralName = lead.referral ? String(lead.referral).trim() : ''
   const hasReferral = Boolean(referralName && referralName.toLowerCase() !== 'none' && referralName.toLowerCase() !== 'null')
-  const referralRate = lead.locked_referral_percent !== null && lead.locked_referral_percent !== undefined ? Number(lead.locked_referral_percent) : null
-  const referralPayout = Number(
-    activeTerm?.referral_payout ?? lead.referral_payout ?? 0
+  const referralRate = activeTerm?.locked_referral_percent !== null && activeTerm?.locked_referral_percent !== undefined
+    ? Number(activeTerm.locked_referral_percent)
+    : (lead.locked_referral_percent !== null && lead.locked_referral_percent !== undefined ? Number(lead.locked_referral_percent) : null)
+
+  const referralPayout = getCommissionVal(
+    activeTerm?.referral_payout,
+    lead.referral_payout
   )
-  const companyCommission = Number(
-    activeTerm?.company_commission ?? lead.company_commission ?? (grossCommission - referralPayout)
+
+  const companyCommission = getCommissionVal(
+    activeTerm?.company_commission,
+    lead.company_commission,
+    grossCommission - referralPayout
   )
+
   const agencyFee = Number(lead.stage_metadata?.agency_fees ?? lead.stage_metadata?.agency_fee ?? 0)
 
-  const currentExpected = Number(
-    activeTerm?.expected_commission ?? lead.expected_commission ?? grossCommission
+  const currentExpected = getCommissionVal(
+    activeTerm?.expected_commission,
+    lead.expected_commission,
+    grossCommission
   )
+
   const currentActual = Number(
     activeTerm?.actual_commission ?? lead.actual_commission ?? 0
   )

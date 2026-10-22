@@ -832,10 +832,11 @@ export default function RenewalDetailView({ initialLead, onBack, refreshLead }: 
 
                   {/* SUBJECT */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-widest mb-1.5">
+                    <label htmlFor="renewal-email-subject" className="block text-xs font-bold text-gray-700 uppercase tracking-widest mb-1.5">
                       Subject <span className="text-red-500">*</span>
                     </label>
                     <input
+                      id="renewal-email-subject"
                       type="text"
                       value={customSubject}
                       onChange={(e) => setCustomSubject(e.target.value)}
@@ -846,10 +847,11 @@ export default function RenewalDetailView({ initialLead, onBack, refreshLead }: 
 
                   {/* BODY */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-widest mb-1.5">
+                    <label htmlFor="renewal-email-body" className="block text-xs font-bold text-gray-700 uppercase tracking-widest mb-1.5">
                       Body <span className="text-red-500">*</span>
                     </label>
                     <textarea
+                      id="renewal-email-body"
                       value={customBody}
                       onChange={(e) => setCustomBody(e.target.value)}
                       placeholder="Write your email message here..."

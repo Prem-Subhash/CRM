@@ -85,7 +85,7 @@ function CommercialRenewalContent({ createRoute }: { createRoute?: string }) {
       notes,
       insurence_category,
       business_name,
-      pipeline_stage:pipeline_stages (
+      pipeline_stage:pipeline_stages!temp_leads_basics_stage_pipeline_fk (
         stage_name,
         pipeline_id
       )
@@ -326,6 +326,7 @@ function CommercialRenewalContent({ createRoute }: { createRoute?: string }) {
                                                         <input
                                                             type="number"
                                                             autoFocus
+                                                            aria-label={`Renewal premium for ${r.client_name || r.business_name || 'client'}`}
                                                             className="w-full px-2 py-1 border-2 border-cyan-400 rounded-md outline-none text-sm font-bold"
                                                             value={editValue}
                                                             onChange={e => setEditValue(e.target.value)}

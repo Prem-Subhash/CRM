@@ -74,7 +74,7 @@ export default function MyLeadsPage() {
           insurence_category,
           policy_flow,
           created_at,
-          current_stage:pipeline_stages!inner (
+          current_stage:pipeline_stages!temp_leads_basics_stage_pipeline_fk!inner (
             stage_name
           )
         `)

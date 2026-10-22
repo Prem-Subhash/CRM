@@ -52,7 +52,7 @@ export default async function SuperAdminDashboard() {
             total_premium,
             new_premium,
             stage_metadata,
-            current_stage:pipeline_stages (
+            current_stage:pipeline_stages!temp_leads_basics_stage_pipeline_fk (
                 stage_name
             )
         `,

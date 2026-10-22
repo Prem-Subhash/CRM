@@ -89,17 +89,12 @@ export default function ReportsClient({ csrs }: ReportsClientProps) {
   useEffect(() => {
     const fetchDropdowns = async () => {
       try {
-        const { data } = await supabase.from('temp_leads_basics').select(`
-          carrier, policy_flow, new_carrier,
-          intake_forms:temp_intake_forms ( form_data, submitted_at )
-        `)
-        if (data) {
-          const carriers = Array.from(new Set(data.flatMap(d => [d.carrier, d.new_carrier]).filter(Boolean))) as string[]
-          const flows = Array.from(new Set(data.map(d => d.policy_flow).filter(Boolean))) as string[]
-          const states = Array.from(new Set(data.map(d => resolvePolicyState(d)).filter(s => s && s !== '—'))) as string[]
-          setAvailableCarriers(carriers.sort())
-          setAvailableFlows(flows.sort())
-          setAvailableStates(states.sort())
+        const res = await fetch('/api/accounting/filter-options')
+        if (res.ok) {
+          const json = await res.json()
+          if (json.carriers) setAvailableCarriers(json.carriers)
+          if (json.flows) setAvailableFlows(json.flows)
+          if (json.states) setAvailableStates(json.states)
         }
       } catch (err) {
         console.error('Failed to load filter options:', err)

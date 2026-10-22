@@ -109,7 +109,7 @@ export function AdminLeadsContent({ categoryProp, flowProp }: { categoryProp?: s
           created_at,
           lead_group_id,
           assigned_csr,
-          current_stage:pipeline_stages${stageFilter ? '!inner' : ''} (
+          current_stage:pipeline_stages!temp_leads_basics_stage_pipeline_fk${stageFilter ? '!inner' : ''} (
             stage_name
           ),
           assigned_csr_profile:profiles!fk_profile (

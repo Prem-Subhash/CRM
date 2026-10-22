@@ -245,7 +245,7 @@ export default function LoginPage() {
             <form onSubmit={handleLogin} className="space-y-4 sm:space-y-5">
               {/* Email Input */}
               <div className="space-y-1.5">
-                <label className="text-xs sm:text-sm font-semibold text-gray-700 block ml-1">
+                <label htmlFor="login-email" className="text-xs sm:text-sm font-semibold text-gray-700 block ml-1">
                   Email Address
                 </label>
                 <div className="relative group">
@@ -253,7 +253,9 @@ export default function LoginPage() {
                     <Mail size={18} aria-hidden="true" />
                   </div>
                   <input
+                    id="login-email"
                     type="email"
+                    autoComplete="username"
                     placeholder="name@company.com"
                     className="w-full pl-10 pr-4 py-3 bg-gray-50/50 hover:bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/50 focus:border-teal-500 transition-all duration-300 text-sm shadow-sm"
                     value={email}
@@ -264,7 +266,7 @@ export default function LoginPage() {
 
               {/* Password Input */}
               <div className="space-y-1.5">
-                <label className="text-xs sm:text-sm font-semibold text-gray-700 block ml-1">
+                <label htmlFor="login-password" className="text-xs sm:text-sm font-semibold text-gray-700 block ml-1">
                   Password
                 </label>
                 <div className="relative group">
@@ -272,7 +274,9 @@ export default function LoginPage() {
                     <Lock size={18} aria-hidden="true" />
                   </div>
                   <input
+                    id="login-password"
                     type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
                     placeholder="......"
                     className="w-full pl-10 pr-12 py-3 bg-gray-50/50 hover:bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-teal-500/50 focus:border-teal-500 transition-all duration-300 text-sm shadow-sm"
                     value={password}
@@ -282,6 +286,8 @@ export default function LoginPage() {
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     aria-label={showPassword ? "Hide password" : "Show password"}
+                    aria-pressed={showPassword}
+                    aria-controls="login-password"
                     className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-gray-500 hover:text-teal-600 transition-colors"
                   >
                     {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -321,7 +327,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => router.push('/forgot-password')}
-                  className="text-teal-600 hover:text-teal-700 font-semibold transition-colors hover:underline underline-offset-2"
+                  className="text-teal-700 hover:text-teal-800 font-semibold transition-colors hover:underline underline-offset-2"
                 >
                   Forgot password?
                 </button>
@@ -329,7 +335,7 @@ export default function LoginPage() {
 
               {/* Error Message */}
               {error && (
-                <div className="p-3 bg-red-50/80 backdrop-blur-sm border border-red-200 text-red-600 text-sm font-medium rounded-xl text-center animate-fade-in shadow-sm">
+                <div role="alert" aria-live="assertive" className="p-3 bg-red-50/80 backdrop-blur-sm border border-red-200 text-red-600 text-sm font-medium rounded-xl text-center animate-fade-in shadow-sm">
                   {error}
                 </div>
               )}
