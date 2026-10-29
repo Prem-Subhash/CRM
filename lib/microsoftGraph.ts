@@ -44,7 +44,8 @@ export async function sendGraphEmail(
     body: string,
     leadId?: string,
     emailType?: string,
-    attachments?: GraphAttachment[]
+    attachments?: GraphAttachment[],
+    outboxId?: string
 ) {
     const recipientList = to.join(', ')
 
@@ -100,28 +101,51 @@ export async function sendGraphEmail(
 
         // Automatic logging capture internally triggered by server API parameters!
         if (leadId && emailType) {
-            await supabaseServer
-                .from("email_logs")
-                .insert({
+            if (outboxId) {
+                const logEntries = to.map(email => ({
                     lead_id: leadId,
                     email_type: emailType,
-                    recipient: recipientList,
-                    status: "sent"
-                })
+                    recipient: email,
+                    status: "sent",
+                    outbox_id: outboxId
+                }))
+                await supabaseServer.from("email_logs").insert(logEntries)
+            } else {
+                await supabaseServer
+                    .from("email_logs")
+                    .insert({
+                        lead_id: leadId,
+                        email_type: emailType,
+                        recipient: recipientList,
+                        status: "sent"
+                    })
+            }
         }
 
         return true
     } catch (error: any) {
         if (leadId && emailType) {
-            await supabaseServer
-                .from("email_logs")
-                .insert({
+            if (outboxId) {
+                const logEntries = to.map(email => ({
                     lead_id: leadId,
                     email_type: emailType,
-                    recipient: recipientList,
+                    recipient: email,
                     status: "failed",
-                    error_message: error.message || String(error)
-                })
+                    error_message: error.message || String(error),
+                    outbox_id: outboxId
+                }))
+                await supabaseServer.from("email_logs").insert(logEntries)
+            } else {
+                await supabaseServer
+                    .from("email_logs")
+                    .insert({
+                        lead_id: leadId,
+                        email_type: emailType,
+                        recipient: recipientList,
+                        status: "failed",
+                        error_message: error.message || String(error)
+                    })
+            }
         }
         throw error
     }

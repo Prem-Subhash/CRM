@@ -63,46 +63,49 @@ export default function IntakeFormPage() {
     }
 
     const loadIntake = async () => {
-      const { data, error } = await supabase
-        .from('temp_intake_forms')
-        .select('*')
-        .eq('id', intakeId)
-        .maybeSingle()
+      try {
+        const res = await fetch(`/api/intake/${intakeId}`)
+        const json = await res.json()
 
-      if (error || !data) {
-        setError('Form not found')
+        if (!res.ok || !json.data) {
+          setError(json.error || 'Form not found')
+          setLoading(false)
+          return
+        }
+
+        const data = json.data
+        setFormType(data.form_type)
+        setLeadId(data.lead_id)
+        setFormData({
+          primary_applicant: {},
+          co_applicant: {},
+          home: {},
+          auto: {},
+          ...(data.form_data || {})
+        })
+
+        // Use Multi-Policy snapshot from temp_intake_forms
+        const policies = data.active_policies && data.active_policies.length > 0
+          ? data.active_policies
+          : [data.form_type];
+
+        setActivePolicies(policies);
+
+        // Fetch existing documents
+        const { data: docs } = await supabase
+          .from('documents')
+          .select('*')
+          .eq('intake_form_id', intakeId)
+
+        if (docs) {
+          setUploadedFiles(docs)
+        }
+
         setLoading(false)
-        return
+      } catch (err: any) {
+        setError('Error loading intake form')
+        setLoading(false)
       }
-
-      setFormType(data.form_type)
-      setLeadId(data.lead_id)
-      setFormData({
-        primary_applicant: {},
-        co_applicant: {},
-        home: {},
-        auto: {},
-        ...(data.form_data || {})
-      })
-
-      // Use Multi-Policy snapshot from temp_intake_forms
-      const policies = data.active_policies && data.active_policies.length > 0 
-        ? data.active_policies 
-        : [data.form_type];
-      
-      setActivePolicies(policies);
-
-      // Fetch existing documents
-      const { data: docs } = await supabase
-        .from('documents')
-        .select('*')
-        .eq('intake_form_id', intakeId)
-
-      if (docs) {
-        setUploadedFiles(docs)
-      }
-
-      setLoading(false)
     }
 
     loadIntake()
@@ -121,15 +124,22 @@ export default function IntakeFormPage() {
   const handleSave = async () => {
     if (isPreview || !intakeId) return
 
-    await supabase
-      .from('temp_intake_forms')
-      .update({
-        form_data: formData,
-        status: 'draft'
+    try {
+      const res = await fetch(`/api/intake/${intakeId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'draft', form_data: formData })
       })
-      .eq('id', intakeId)
 
-    showToast('Progress saved.', 'success')
+      if (res.ok) {
+        showToast('Progress saved.', 'success')
+      } else {
+        const json = await res.json().catch(() => ({}))
+        showToast(json.error || 'Failed to save progress', 'error')
+      }
+    } catch (err) {
+      showToast('Error saving progress', 'error')
+    }
   }
 
   /* ================= PROCESS FILES ================= */
@@ -161,7 +171,7 @@ export default function IntakeFormPage() {
     if (isPreview || !intakeId) return
 
     setError(null)
-    
+
     // Multi-Policy Validation: Ensure at least some data exists for the requested sections
     let validationError = null;
     if (isHomeLayout && (!formData.home || Object.keys(formData.home).length === 0)) {
@@ -170,7 +180,7 @@ export default function IntakeFormPage() {
     if (isAutoLayout && (!formData.auto || Object.keys(formData.auto).length === 0)) {
       validationError = "Please complete the Auto Insurance section.";
     }
-    
+
     if (validationError) {
       setError(validationError);
       return;
@@ -178,31 +188,33 @@ export default function IntakeFormPage() {
 
     setIsSubmitting(true)
 
-    const { error } = await supabase
-      .from('temp_intake_forms')
-      .update({
-        form_data: formData,
-        status: 'submitted',
-        submitted_at: new Date().toISOString()
+    try {
+      const res = await fetch(`/api/intake/${intakeId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'submit', form_data: formData })
       })
-      .eq('id', intakeId)
 
-    if (error) {
-      setError(error.message)
+      const json = await res.json().catch(() => ({}))
+
+      if (!res.ok) {
+        setError(json.error || 'Submission failed')
+        setIsSubmitting(false)
+        return
+      }
+
+      await fetch('/api/notify-submission', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ intakeId, formType })
+      })
+
+      setSubmitted(true)
       setIsSubmitting(false)
-      return
+    } catch (err: any) {
+      setError('An error occurred while submitting your application.')
+      setIsSubmitting(false)
     }
-
-    // Removed frontend update to temp_leads_basics; notify-submission handles it.
-
-    await fetch('/api/notify-submission', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ intakeId, formType })
-    })
-
-    setSubmitted(true)
-    setIsSubmitting(false)
   }
 
   /* ================= DELETE FILE HANDLER ================= */
@@ -268,12 +280,12 @@ export default function IntakeFormPage() {
         {/* Background Styling from Login Page */}
         <div className="absolute top-0 right-0 w-64 md:w-96 h-full bg-white/10 skew-x-12 translate-x-32 rounded-l-3xl backdrop-blur-sm pointer-events-none" />
         <div className="absolute bottom-0 left-0 w-96 h-96 bg-teal-400/30 rounded-full blur-3xl pointer-events-none" />
-        
+
         {/* Ambient background glow */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="w-[40rem] h-[40rem] bg-emerald-400/20 rounded-full blur-3xl" />
         </div>
-        
+
         <motion.div
           initial={{ opacity: 0, y: 20, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
@@ -294,9 +306,9 @@ export default function IntakeFormPage() {
               transition={{ duration: 2, repeat: Infinity, ease: "easeOut", delay: 0.5 }}
               className="absolute inset-0 bg-emerald-50 rounded-full"
             />
-            
+
             {/* Main icon container */}
-            <motion.div 
+            <motion.div
               initial={{ scale: 0, rotate: -45 }}
               animate={{ scale: 1, rotate: 0 }}
               transition={{ type: "spring", damping: 15, stiffness: 200, delay: 0.2 }}
@@ -305,8 +317,8 @@ export default function IntakeFormPage() {
               <CheckCircle2 size={40} strokeWidth={2.5} />
             </motion.div>
           </div>
-          
-          <motion.h2 
+
+          <motion.h2
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.3 }}
@@ -314,8 +326,8 @@ export default function IntakeFormPage() {
           >
             Insurance team
           </motion.h2>
-          
-          <motion.p 
+
+          <motion.p
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.4 }}

@@ -10,7 +10,7 @@ export async function POST(req: Request) {
         }
 
         const body = await req.json()
-        const { leadId, targetUserId } = body
+        const { leadId, targetUserId, clientTxId, clientName, policyFlow, insuranceCategory, policyType, targetUserRole } = body
 
         if (!leadId) {
             return NextResponse.json(
@@ -24,49 +24,49 @@ export async function POST(req: Request) {
             ? null
             : targetUserId
 
-        // 1. Fetch lead to check for multi-policy lead_group_id
-        const { data: targetLead, error: fetchError } = await supabaseServer
-            .from('temp_leads_basics')
-            .select('id, lead_group_id')
-            .eq('id', leadId)
-            .maybeSingle()
+        // Construct notification payload for outbox
+        const finalClientName = clientName || 'Client'
+        const isRenewal = (policyFlow || '').toLowerCase() === 'renewal'
+        const isCommercial = (insuranceCategory || '').toLowerCase() === 'commercial'
+        const isAdmin = targetUserRole === 'admin' || targetUserRole === 'superadmin'
 
-        if (fetchError || !targetLead) {
-            return NextResponse.json(
-                { error: fetchError?.message || 'Lead record not found' },
-                { status: 404 }
-            )
+        const categoryLabel = isCommercial ? 'Commercial' : 'Personal'
+        const flowLabel = isRenewal ? 'Renewal' : 'Lead'
+        const notificationTitle = `New ${categoryLabel} ${flowLabel} Assigned`
+        const finalPolicyType = policyType || '—'
+        const notificationMessage = `Client: ${finalClientName}\nPolicy: ${finalPolicyType}`
+        const notificationLink = isRenewal
+            ? (isAdmin ? `/admin/leads/renewals/${leadId}` : `/csr/renewals/${leadId}`)
+            : `/csr/leads/${leadId}`
+
+        const outboxPayload = {
+            targetUserId: targetValue,
+            leadId,
+            title: notificationTitle,
+            message: notificationMessage,
+            link: notificationLink,
+            clientName: finalClientName,
+            policyFlow: policyFlow || 'new',
+            insuranceCategory: insuranceCategory || 'personal',
+            policyType: finalPolicyType
         }
 
-        // 2. Perform server-side update with service-role client
-        let updateQuery = supabaseServer
-            .from('temp_leads_basics')
-            .update({ assigned_csr: targetValue })
+        // Atomically update lead assignment and insert notification outbox entry via RPC
+        const { data: rpcData, error: rpcError } = await supabaseServer.rpc('assign_lead_with_outbox', {
+            p_lead_id: leadId,
+            p_target_user_id: targetValue,
+            p_client_tx_id: clientTxId || null,
+            p_payload: outboxPayload
+        })
 
-        if (targetLead.lead_group_id) {
-            updateQuery = updateQuery.eq('lead_group_id', targetLead.lead_group_id)
-        } else {
-            updateQuery = updateQuery.eq('id', leadId)
-        }
-
-        const { data: updatedRows, error: updateError } = await updateQuery.select('id, assigned_csr')
-
-        if (updateError) {
-            console.error('Server error updating lead assignment:', updateError)
-            return NextResponse.json({ error: updateError.message }, { status: 500 })
-        }
-
-        if (!updatedRows || updatedRows.length === 0) {
-            return NextResponse.json(
-                { error: 'Lead assignment did not update any database row' },
-                { status: 500 }
-            )
+        if (rpcError) {
+            console.error('Server error in assign_lead_with_outbox RPC:', rpcError)
+            return NextResponse.json({ error: rpcError.message }, { status: 500 })
         }
 
         return NextResponse.json({
             success: true,
-            updatedCount: updatedRows.length,
-            rows: updatedRows
+            updatedCount: rpcData?.updated_count || 1
         })
     } catch (err: any) {
         console.error('Unexpected error in assign-lead API:', err)

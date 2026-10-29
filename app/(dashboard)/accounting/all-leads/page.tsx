@@ -37,6 +37,7 @@ type Lead = {
   intake_forms?: any[]
   current_stage: { stage_name: string } | null
   assigned_csr_profile: { full_name: string } | null
+  policy_terms?: any
 }
 
 const STAGE_FILTERS = [
@@ -53,7 +54,7 @@ export default function AccountingAllLeadsPage() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const { showToast } = useToast()
-  
+
   // URL Params initialization
   const stageFilter = searchParams.get('stage') || 'Completed'
   const urlCategory = searchParams.get('category')
@@ -64,6 +65,7 @@ export default function AccountingAllLeadsPage() {
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [page, setPage] = useState(0)
+  const [totalCount, setTotalCount] = useState(0)
   const [showFilters, setShowFilters] = useState(Boolean(urlCategory || urlFlow || urlStatus))
 
   // Inline Edit State
@@ -87,6 +89,23 @@ export default function AccountingAllLeadsPage() {
   const [availableFlows, setAvailableFlows] = useState<string[]>([])
   const [availableStates, setAvailableStates] = useState<string[]>([])
   const [availableCsrs, setAvailableCsrs] = useState<{ id: string; name: string }[]>([])
+
+  useEffect(() => {
+    setPage(0)
+  }, [
+    searchTerm,
+    stageFilter,
+    accountingStatusFilter,
+    accountingVerifiedFilter,
+    categoryFilter,
+    policyFlowFilter,
+    carrierFilter,
+    stateFilter,
+    assignedCsrFilter,
+    startDate,
+    endDate,
+    sortBy
+  ])
 
   const handleInlineStart = (lead: Lead) => {
     setEditingRowId(lead.id)
@@ -157,24 +176,12 @@ export default function AccountingAllLeadsPage() {
   useEffect(() => {
     const fetchDropdowns = async () => {
       try {
-        const { data: leadsData } = await supabase
-          .from('temp_leads_basics')
-          .select(`
-            carrier, new_carrier, policy_flow, stage_metadata,
-            intake_forms:temp_intake_forms (
-              form_data,
-              submitted_at
-            )
-          `)
-        
-        if (leadsData) {
-          const carriers = Array.from(new Set(leadsData.flatMap(d => [d.carrier, d.new_carrier]).filter(Boolean))) as string[]
-          const flows = Array.from(new Set(leadsData.map(d => d.policy_flow).filter(Boolean))) as string[]
-          const states = Array.from(new Set(leadsData.map(d => resolvePolicyState(d)).filter(s => s && s !== '—'))) as string[]
-          
-          setAvailableCarriers(carriers.sort())
-          setAvailableFlows(flows.sort())
-          setAvailableStates(states.sort())
+        const res = await fetch('/api/accounting/filter-options')
+        if (res.ok) {
+          const json = await res.json()
+          if (json.carriers) setAvailableCarriers(json.carriers)
+          if (json.flows) setAvailableFlows(json.flows)
+          if (json.states) setAvailableStates(json.states)
         }
 
         const { data: profilesData } = await supabase
@@ -199,25 +206,37 @@ export default function AccountingAllLeadsPage() {
       let query = supabase
         .from('temp_leads_basics')
         .select(`
-          id, client_name, phone, email, insurence_category, policy_flow, created_at,
+          id, policy_id, policy_term_id, client_name, phone, email, insurence_category, policy_flow, created_at,
           total_premium, expected_commission, actual_commission,
           accounting_status, accounting_verified, carrier, policy_number,
           new_carrier, new_policy_number, new_premium, stage_metadata,
-          current_stage:pipeline_stages${stageFilter ? '!inner' : ''} (stage_name),
+          current_stage:pipeline_stages!temp_leads_basics_stage_pipeline_fk${stageFilter ? '!inner' : ''} (stage_name),
           assigned_csr_profile:profiles!fk_profile (full_name),
+          policy_terms:policy_terms!policy_term_id (
+            id,
+            policy_id,
+            term_sequence,
+            term_status,
+            carrier,
+            policy_number,
+            written_premium,
+            expected_commission,
+            actual_commission,
+            accounting_status,
+            accounting_verified
+          ),
           intake_forms:temp_intake_forms (
             form_data,
             submitted_at
           )
-        `)
-        .range(page * 10, (page + 1) * 10 - 1)
+        `, { count: 'exact' })
 
       // Sorting
-      if (sortBy === 'created_desc') query = query.order('created_at', { ascending: false })
-      else if (sortBy === 'created_asc') query = query.order('created_at', { ascending: true })
-      else if (sortBy === 'name_asc') query = query.order('client_name', { ascending: true })
-      else if (sortBy === 'premium_desc') query = query.order('total_premium', { ascending: false })
-      else if (sortBy === 'comm_desc') query = query.order('expected_commission', { ascending: false })
+      if (sortBy === 'created_desc') query = query.order('created_at', { ascending: false }).order('id', { ascending: false })
+      else if (sortBy === 'created_asc') query = query.order('created_at', { ascending: true }).order('id', { ascending: true })
+      else if (sortBy === 'name_asc') query = query.order('client_name', { ascending: true }).order('id', { ascending: true })
+      else if (sortBy === 'premium_desc') query = query.order('total_premium', { ascending: false }).order('id', { ascending: false })
+      else if (sortBy === 'comm_desc') query = query.order('expected_commission', { ascending: false }).order('id', { ascending: false })
 
       if (stageFilter && stageFilter !== 'all') {
         if (stageFilter === 'Completed') {
@@ -244,7 +263,7 @@ export default function AccountingAllLeadsPage() {
       }
 
       if (policyFlowFilter !== 'all') {
-        query = query.ilike('policy_flow', `%${policyFlowFilter}%`)
+        query = query.eq('policy_flow', policyFlowFilter)
       }
 
       if (carrierFilter !== 'all') {
@@ -264,18 +283,60 @@ export default function AccountingAllLeadsPage() {
         query = query.lte('created_at', end.toISOString())
       }
 
-      const { data, error } = await query
+      const trimmedSearch = searchTerm.trim()
+      if (trimmedSearch) {
+        const searchOrs: string[] = [
+          `client_name.ilike.%${trimmedSearch}%`,
+          `email.ilike.%${trimmedSearch}%`,
+          `phone.ilike.%${trimmedSearch}%`,
+          `policy_number.ilike.%${trimmedSearch}%`,
+          `new_policy_number.ilike.%${trimmedSearch}%`
+        ]
 
-      if (error) {
-        console.error(error)
-        setLeads([])
+        const matchingCsrs = availableCsrs.filter(c => c.name.toLowerCase().includes(trimmedSearch.toLowerCase())).map(c => c.id)
+        if (matchingCsrs.length > 0) {
+          searchOrs.push(`assigned_csr.in.(${matchingCsrs.join(',')})`)
+        }
+
+        query = query.or(searchOrs.join(','))
+      }
+
+      if (stateFilter === 'all') {
+        query = query.range(page * 10, (page + 1) * 10 - 1)
+        const { data, error, count } = await query
+
+        if (error) {
+          console.error(error)
+          setLeads([])
+          setTotalCount(0)
+        } else {
+          const formatted = (data as any[]).map(row => ({
+            ...row,
+            current_stage: Array.isArray(row.current_stage) ? row.current_stage[0] ?? null : row.current_stage ?? null,
+            assigned_csr_profile: Array.isArray(row.assigned_csr_profile) ? row.assigned_csr_profile[0] ?? null : row.assigned_csr_profile ?? null,
+          }))
+          setLeads(formatted)
+          setTotalCount(count ?? formatted.length)
+        }
       } else {
-        const formatted = (data as any[]).map(row => ({
-          ...row,
-          current_stage: Array.isArray(row.current_stage) ? row.current_stage[0] ?? null : row.current_stage ?? null,
-          assigned_csr_profile: Array.isArray(row.assigned_csr_profile) ? row.assigned_csr_profile[0] ?? null : row.assigned_csr_profile ?? null,
-        }))
-        setLeads(formatted)
+        // Evaluate resolvePolicyState for candidates matching DB query
+        const { data, error } = await query
+
+        if (error) {
+          console.error(error)
+          setLeads([])
+          setTotalCount(0)
+        } else {
+          const formatted = (data as any[]).map(row => ({
+            ...row,
+            current_stage: Array.isArray(row.current_stage) ? row.current_stage[0] ?? null : row.current_stage ?? null,
+            assigned_csr_profile: Array.isArray(row.assigned_csr_profile) ? row.assigned_csr_profile[0] ?? null : row.assigned_csr_profile ?? null,
+          }))
+
+          const stateFiltered = formatted.filter(lead => resolvePolicyState(lead) === stateFilter)
+          setTotalCount(stateFiltered.length)
+          setLeads(stateFiltered.slice(page * 10, (page + 1) * 10))
+        }
       }
 
       setLoading(false)
@@ -283,17 +344,20 @@ export default function AccountingAllLeadsPage() {
 
     loadLeads()
   }, [
-    stageFilter, 
-    page, 
-    accountingStatusFilter, 
-    accountingVerifiedFilter, 
+    stageFilter,
+    page,
+    searchTerm,
+    accountingStatusFilter,
+    accountingVerifiedFilter,
     categoryFilter,
-    policyFlowFilter, 
-    carrierFilter, 
+    policyFlowFilter,
+    carrierFilter,
+    stateFilter,
     assignedCsrFilter,
     startDate,
     endDate,
-    sortBy
+    sortBy,
+    availableCsrs
   ])
 
   const applyFilter = (stage: string | null) => {
@@ -318,26 +382,7 @@ export default function AccountingAllLeadsPage() {
     router.push('/accounting/all-leads')
   }
 
-  const filteredLeads = leads.filter(lead => {
-    const term = searchTerm.toLowerCase()
-    const matchesSearch = (
-      (lead.client_name && lead.client_name.toLowerCase().includes(term)) ||
-      (lead.email && lead.email.toLowerCase().includes(term)) ||
-      (lead.phone && lead.phone.includes(term)) ||
-      (lead.policy_number && lead.policy_number.toLowerCase().includes(term)) ||
-      (lead.new_policy_number && lead.new_policy_number.toLowerCase().includes(term)) ||
-      (lead.assigned_csr_profile?.full_name && lead.assigned_csr_profile.full_name.toLowerCase().includes(term))
-    )
-
-    if (!matchesSearch) return false
-
-    if (stateFilter !== 'all') {
-      const resolved = resolvePolicyState(lead)
-      if (resolved !== stateFilter) return false
-    }
-
-    return true
-  })
+  const filteredLeads = leads
 
   const activeFilterCount = [
     accountingStatusFilter !== 'all',
@@ -362,8 +407,8 @@ export default function AccountingAllLeadsPage() {
           </p>
         </div>
 
-        
-    
+
+
       </div>
 
       {/* ── Stage Filter Tabs ── */}
@@ -405,7 +450,7 @@ export default function AccountingAllLeadsPage() {
 
           <div className="flex items-center gap-4 w-full sm:w-auto">
             <div className="text-sm text-gray-500 font-medium whitespace-nowrap">
-              {filteredLeads.length} result{filteredLeads.length !== 1 && 's'}
+              {totalCount} result{totalCount !== 1 && 's'}
             </div>
             <button
               onClick={() => setShowFilters(!showFilters)}
@@ -595,8 +640,28 @@ export default function AccountingAllLeadsPage() {
                 {filteredLeads.map(lead => {
                   const stage = lead.current_stage?.stage_name ?? '—'
                   const createdDate = lead.created_at ? new Date(lead.created_at).toLocaleDateString() : '—'
-                  const active = getActivePolicy(lead)
+                  const activeTerm = Array.isArray(lead.policy_terms)
+                    ? lead.policy_terms.find((t: any) => t.term_status === 'Active') || lead.policy_terms[0] || null
+                    : (typeof lead.policy_terms === 'object' ? lead.policy_terms : null)
+                  const active = getActivePolicy({ ...lead, policy_terms: activeTerm || lead.policy_terms })
                   const resolvedState = resolvePolicyState(lead)
+
+                  const displayPremium = (activeTerm && activeTerm.written_premium !== null && activeTerm.written_premium !== undefined)
+                    ? Number(activeTerm.written_premium) || 0
+                    : Number(active.activePremium) || 0
+
+                  const displayExpectedComm = (activeTerm && activeTerm.expected_commission !== null && activeTerm.expected_commission !== undefined)
+                    ? Number(activeTerm.expected_commission) || 0
+                    : Number(lead.expected_commission) || 0
+
+                  const displayActualComm = (activeTerm && activeTerm.actual_commission !== null && activeTerm.actual_commission !== undefined)
+                    ? Number(activeTerm.actual_commission) || 0
+                    : Number(lead.actual_commission) || 0
+
+                  const displayStatus = activeTerm?.accounting_status || lead.accounting_status
+                  const displayVerified = activeTerm?.accounting_verified !== undefined && activeTerm?.accounting_verified !== null
+                    ? Boolean(activeTerm.accounting_verified)
+                    : Boolean(lead.accounting_verified)
 
                   return (
                     <tr key={lead.id} className="hover:bg-gray-50/80 transition-colors group">
@@ -624,10 +689,10 @@ export default function AccountingAllLeadsPage() {
                         {resolvedState}
                       </td>
                       <td className="px-3 py-3.5 text-right text-gray-900 font-semibold text-xs align-top">
-                        {formatCurrency(active.activePremium)}
+                        {formatCurrency(displayPremium)}
                       </td>
                       <td className="px-3 py-3.5 text-right text-gray-900 text-xs align-top">
-                        {formatCurrency(lead.expected_commission)}
+                        {formatCurrency(displayExpectedComm)}
                       </td>
                       <td className="px-3 py-3 text-right text-gray-900 font-medium text-xs align-top">
                         {editingRowId === lead.id ? (
@@ -676,7 +741,7 @@ export default function AccountingAllLeadsPage() {
                           </div>
                         ) : (
                           <div className="flex items-center justify-end gap-1 group/cell">
-                            <span>{formatCurrency(lead.actual_commission)}</span>
+                            <span>{formatCurrency(displayActualComm)}</span>
                             <button
                               type="button"
                               onClick={() => handleInlineStart(lead)}
@@ -689,10 +754,10 @@ export default function AccountingAllLeadsPage() {
                         )}
                       </td>
                       <td className="px-3 py-3.5 text-center align-top">
-                        <StatusBadge status={lead.accounting_status} />
+                        <StatusBadge status={displayStatus} />
                       </td>
                       <td className="px-3 py-3.5 text-center align-top">
-                        <VerificationBadge verified={lead.accounting_verified} />
+                        <VerificationBadge verified={displayVerified} />
                       </td>
                       <td className="px-3 py-3.5 text-center text-gray-500 whitespace-nowrap text-xs align-top">
                         {createdDate}
@@ -728,7 +793,7 @@ export default function AccountingAllLeadsPage() {
           </span>
           <button
             onClick={() => setPage(p => p + 1)}
-            disabled={leads.length < 10 || loading}
+            disabled={(page + 1) * 10 >= totalCount || loading}
             className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             Next

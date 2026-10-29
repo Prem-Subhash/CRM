@@ -1,5 +1,6 @@
 import React from "react";
 import { createServer } from "@/lib/supabaseServer";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
   Users,
@@ -24,6 +25,11 @@ import { getActivePolicy } from "@/utils/activePolicyHelper";
 
 export default async function SuperAdminDashboard() {
   const supabase = await createServer();
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+  if (authError || !user) {
+    redirect("/login");
+  }
 
   // 1. Fetch profiles for headcount breakdown
   const { data: profilesList } = await supabase
@@ -46,7 +52,7 @@ export default async function SuperAdminDashboard() {
             total_premium,
             new_premium,
             stage_metadata,
-            current_stage:pipeline_stages (
+            current_stage:pipeline_stages!temp_leads_basics_stage_pipeline_fk (
                 stage_name
             )
         `,

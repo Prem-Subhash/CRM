@@ -29,6 +29,8 @@ export default async function LeadAccountingPage({ params }: { params: Promise<{
     .from('temp_leads_basics')
     .select(`
       id,
+      policy_id,
+      policy_term_id,
       client_name,
       phone,
       email,
@@ -63,6 +65,31 @@ export default async function LeadAccountingPage({ params }: { params: Promise<{
       stage_metadata,
       assigned_user_profile:profiles!fk_profile (
         full_name
+      ),
+      policy_terms:policy_terms!policy_term_id (
+        id,
+        policy_id,
+        term_sequence,
+        term_status,
+        carrier,
+        policy_number,
+        written_premium,
+        effective_date,
+        expiration_date,
+        gross_commission,
+        expected_commission,
+        actual_commission,
+        admin_charge,
+        net_commission,
+        referral_payout,
+        company_commission,
+        accounting_status,
+        accounting_verified,
+        accounting_notes,
+        carrier_payment_date,
+        commission_received_date,
+        verified_by,
+        verified_at
       )
     `)
     .eq('id', leadId)

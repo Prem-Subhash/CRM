@@ -49,49 +49,119 @@ export default function LeadAccountingClient({
 
   // --- State Variables ---
   const [lead, setLead] = useState(initialLead)
-  const active = getActivePolicy(lead)
+
+  // Authoritative Active Policy Term Resolution
+  const activeTerm = Array.isArray(lead.policy_terms)
+    ? lead.policy_terms.find((t: any) => t.id === lead.policy_term_id || t.term_status === 'Active') || lead.policy_terms[0] || null
+    : (typeof lead.policy_terms === 'object' ? lead.policy_terms : null)
+
+  const active = getActivePolicy({ ...lead, policy_terms: activeTerm || lead.policy_terms })
   const [logs, setLogs] = useState(initialLogs)
   const [refreshing, setRefreshing] = useState(false)
 
-  // Input states
-  const [expectedCommissionInput, setExpectedCommissionInput] = useState<number>(lead.expected_commission ?? 0)
-  const [actualCommissionInput, setActualCommissionInput] = useState<number>(lead.actual_commission ?? 0)
-  const [carrierPaymentDateInput, setCarrierPaymentDateInput] = useState<string>(lead.carrier_payment_date ?? '')
-  const [commissionReceivedDateInput, setCommissionReceivedDateInput] = useState<string>(lead.commission_received_date ?? '')
-  const [accountingStatusInput, setAccountingStatusInput] = useState<string>(lead.accounting_status ?? 'unreconciled')
-  const [accountingVerifiedInput, setAccountingVerifiedInput] = useState<boolean>(lead.accounting_verified ?? false)
-  const [accountingNotesInput, setAccountingNotesInput] = useState<string>(lead.accounting_notes ?? '')
+  // Input states (initialized from activeTerm authoritatively)
+  const [expectedCommissionInput, setExpectedCommissionInput] = useState<number>(
+    activeTerm?.expected_commission ?? lead.expected_commission ?? 0
+  )
+  const [actualCommissionInput, setActualCommissionInput] = useState<number>(
+    activeTerm?.actual_commission ?? lead.actual_commission ?? 0
+  )
+  const [carrierPaymentDateInput, setCarrierPaymentDateInput] = useState<string>(
+    activeTerm?.carrier_payment_date ?? lead.carrier_payment_date ?? ''
+  )
+  const [commissionReceivedDateInput, setCommissionReceivedDateInput] = useState<string>(
+    activeTerm?.commission_received_date ?? lead.commission_received_date ?? ''
+  )
+  const [accountingStatusInput, setAccountingStatusInput] = useState<string>(
+    activeTerm?.accounting_status ?? lead.accounting_status ?? 'unreconciled'
+  )
+  const [accountingVerifiedInput, setAccountingVerifiedInput] = useState<boolean>(
+    activeTerm?.accounting_verified ?? lead.accounting_verified ?? false
+  )
+  const [accountingNotesInput, setAccountingNotesInput] = useState<string>(
+    activeTerm?.accounting_notes ?? lead.accounting_notes ?? ''
+  )
 
   // Loading flags
   const [isUpdatingCommission, setIsUpdatingCommission] = useState(false)
   const [isVerifyingPolicy, setIsVerifyingPolicy] = useState(false)
 
-  // --- Financial Values from Database ---
-  const boundPremium = Number(active.activePremium || lead.total_premium || 0)
-  const carrierRate = lead.locked_carrier_percent !== null && lead.locked_carrier_percent !== undefined ? Number(lead.locked_carrier_percent) : null
-  const grossCommission = Number(lead.gross_commission ?? lead.expected_commission ?? 0)
-  const adminCharge = Number(lead.admin_charge ?? 0)
-  const netCommission = Number(lead.net_commission ?? (grossCommission - adminCharge))
+  // --- Financial Values from Database (Authoritative Active Term & Lead Fallback read) ---
+  const getCommissionVal = (termVal: any, leadVal: any, fallbackVal: number = 0) => {
+    const termNum = termVal !== null && termVal !== undefined ? Number(termVal) : null
+    const leadNum = leadVal !== null && leadVal !== undefined ? Number(leadVal) : null
+
+    if (termNum !== null && termNum > 0) return termNum
+    if (leadNum !== null && leadNum > 0) return leadNum
+    if (termNum !== null) return termNum
+    if (leadNum !== null) return leadNum
+    return fallbackVal
+  }
+
+  const boundPremium = Number(
+    activeTerm?.written_premium ?? active.activePremium ?? lead.total_premium ?? 0
+  )
+  const carrierRate = activeTerm?.locked_carrier_percent !== null && activeTerm?.locked_carrier_percent !== undefined
+    ? Number(activeTerm.locked_carrier_percent)
+    : (lead.locked_carrier_percent !== null && lead.locked_carrier_percent !== undefined ? Number(lead.locked_carrier_percent) : null)
+
+  const grossCommission = getCommissionVal(
+    activeTerm?.gross_commission ?? activeTerm?.expected_commission,
+    lead.gross_commission ?? lead.expected_commission
+  )
+
+  const adminCharge = getCommissionVal(
+    activeTerm?.admin_charge,
+    lead.admin_charge
+  )
+
+  const netCommission = getCommissionVal(
+    activeTerm?.net_commission,
+    lead.net_commission,
+    grossCommission - adminCharge
+  )
+
   const referralName = lead.referral ? String(lead.referral).trim() : ''
   const hasReferral = Boolean(referralName && referralName.toLowerCase() !== 'none' && referralName.toLowerCase() !== 'null')
-  const referralRate = lead.locked_referral_percent !== null && lead.locked_referral_percent !== undefined ? Number(lead.locked_referral_percent) : null
-  const referralPayout = Number(lead.referral_payout ?? 0)
-  const companyCommission = Number(lead.company_commission ?? (grossCommission - referralPayout))
+  const referralRate = activeTerm?.locked_referral_percent !== null && activeTerm?.locked_referral_percent !== undefined
+    ? Number(activeTerm.locked_referral_percent)
+    : (lead.locked_referral_percent !== null && lead.locked_referral_percent !== undefined ? Number(lead.locked_referral_percent) : null)
+
+  const referralPayout = getCommissionVal(
+    activeTerm?.referral_payout,
+    lead.referral_payout
+  )
+
+  const companyCommission = getCommissionVal(
+    activeTerm?.company_commission,
+    lead.company_commission,
+    grossCommission - referralPayout
+  )
+
   const agencyFee = Number(lead.stage_metadata?.agency_fees ?? lead.stage_metadata?.agency_fee ?? 0)
 
-  const currentExpected = Number(lead.expected_commission ?? grossCommission)
-  const currentActual = Number(lead.actual_commission ?? 0)
+  const currentExpected = getCommissionVal(
+    activeTerm?.expected_commission,
+    lead.expected_commission,
+    grossCommission
+  )
+
+  const currentActual = Number(
+    activeTerm?.actual_commission ?? lead.actual_commission ?? 0
+  )
   const variance = currentExpected - currentActual
 
   // --- Data Fetching ---
   const fetchLeadAndLogs = async () => {
     setRefreshing(true)
     try {
-      // 1. Fetch Lead
+      // 1. Fetch Lead & Authoritative policy_terms
       const { data: leadData, error: leadErr } = await supabase
         .from('temp_leads_basics')
         .select(`
           id,
+          policy_id,
+          policy_term_id,
           client_name,
           phone,
           email,
@@ -126,6 +196,31 @@ export default function LeadAccountingClient({
           stage_metadata,
           assigned_user_profile:profiles!fk_profile (
             full_name
+          ),
+          policy_terms:policy_terms!policy_term_id (
+            id,
+            policy_id,
+            term_sequence,
+            term_status,
+            carrier,
+            policy_number,
+            written_premium,
+            effective_date,
+            expiration_date,
+            gross_commission,
+            expected_commission,
+            actual_commission,
+            admin_charge,
+            net_commission,
+            referral_payout,
+            company_commission,
+            accounting_status,
+            accounting_verified,
+            accounting_notes,
+            carrier_payment_date,
+            commission_received_date,
+            verified_by,
+            verified_at
           )
         `)
         .eq('id', leadId)
@@ -137,13 +232,17 @@ export default function LeadAccountingClient({
 
       if (leadData) {
         setLead(leadData)
-        setExpectedCommissionInput(leadData.expected_commission ?? 0)
-        setActualCommissionInput(leadData.actual_commission ?? 0)
-        setCarrierPaymentDateInput(leadData.carrier_payment_date ?? '')
-        setCommissionReceivedDateInput(leadData.commission_received_date ?? '')
-        setAccountingStatusInput(leadData.accounting_status ?? 'unreconciled')
-        setAccountingVerifiedInput(leadData.accounting_verified ?? false)
-        setAccountingNotesInput(leadData.accounting_notes ?? '')
+        const fetchedTerm = Array.isArray(leadData.policy_terms)
+          ? leadData.policy_terms.find((t: any) => t.id === leadData.policy_term_id || t.term_status === 'Active') || leadData.policy_terms[0] || null
+          : (typeof leadData.policy_terms === 'object' ? leadData.policy_terms : null)
+
+        setExpectedCommissionInput(fetchedTerm?.expected_commission ?? leadData.expected_commission ?? 0)
+        setActualCommissionInput(fetchedTerm?.actual_commission ?? leadData.actual_commission ?? 0)
+        setCarrierPaymentDateInput(fetchedTerm?.carrier_payment_date ?? leadData.carrier_payment_date ?? '')
+        setCommissionReceivedDateInput(fetchedTerm?.commission_received_date ?? leadData.commission_received_date ?? '')
+        setAccountingStatusInput(fetchedTerm?.accounting_status ?? leadData.accounting_status ?? 'unreconciled')
+        setAccountingVerifiedInput(fetchedTerm?.accounting_verified ?? leadData.accounting_verified ?? false)
+        setAccountingNotesInput(fetchedTerm?.accounting_notes ?? leadData.accounting_notes ?? '')
       }
 
       // 2. Fetch Logs
@@ -683,13 +782,13 @@ export default function LeadAccountingClient({
               <div className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100">
                 <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Expected Comm</p>
                 <p className="text-xs font-black text-emerald-600 mt-1">
-                  {formatCurrency(lead.expected_commission)}
+                  {formatCurrency(currentExpected)}
                 </p>
               </div>
               <div className="bg-gray-50 rounded-xl p-3 text-center border border-gray-100">
                 <p className="text-[9px] font-bold text-gray-400 uppercase tracking-wide">Actual Received</p>
                 <p className="text-xs font-black text-purple-600 mt-1">
-                  {formatCurrency(lead.actual_commission)}
+                  {formatCurrency(currentActual)}
                 </p>
               </div>
             </div>

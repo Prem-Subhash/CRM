@@ -6,7 +6,7 @@ import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import { Eye, Search, Briefcase, Calendar, Download } from 'lucide-react'
 import { formatPolicies } from '@/utils/formatPolicies'
-import { extractDigits, normalizePhoneSearch, formatDatabasePhone } from '@/utils/phoneFormatter'
+import { extractDigits, normalizePhoneSearch, formatDatabasePhone, formatPhoneInput } from '@/utils/phoneFormatter'
 import Loading from '@/components/ui/Loading'
 import { toast } from '@/lib/toast'
 
@@ -76,17 +76,18 @@ export function AdminLeadsContent({ categoryProp, flowProp }: { categoryProp?: s
 
     useEffect(() => {
         setPage(0)
-    }, [stageFilter, monthFilter])
+    }, [stageFilter, monthFilter, searchTerm])
 
     useEffect(() => {
         const loadInitialData = async () => {
             setLoading(true)
 
-            // 1. Fetch user directory for inline assignment dropdown
+            // 1. Fetch user directory for inline assignment dropdown (active users only)
             const { data: assigneeData } = await supabase
                 .from('profiles')
                 .select('id, full_name, role')
                 .in('role', ['csr', 'admin'])
+                .eq('is_active', true)
 
             if (assigneeData) setAssignees(assigneeData)
 
@@ -108,15 +109,13 @@ export function AdminLeadsContent({ categoryProp, flowProp }: { categoryProp?: s
           created_at,
           lead_group_id,
           assigned_csr,
-          current_stage:pipeline_stages${stageFilter ? '!inner' : ''} (
+          current_stage:pipeline_stages!temp_leads_basics_stage_pipeline_fk${stageFilter ? '!inner' : ''} (
             stage_name
           ),
           assigned_csr_profile:profiles!fk_profile (
             full_name
           )
         `)
-                .order('created_at', { ascending: false })
-                .range(page * 50, (page + 1) * 50 - 1)
 
             if (adminId) {
                 query = query.or(`assigned_csr.is.null,assigned_csr.eq.${adminId}`)
@@ -145,6 +144,29 @@ export function AdminLeadsContent({ categoryProp, flowProp }: { categoryProp?: s
                 query = query.gte('renewal_date', startOfMonth).lt('renewal_date', nextDate)
             }
 
+            const trimmedSearch = searchTerm.trim()
+            if (trimmedSearch) {
+                const digits = extractDigits(trimmedSearch)
+                const formatted = digits ? formatPhoneInput(digits) : ''
+
+                const searchOrs: string[] = [
+                    `client_name.ilike.%${trimmedSearch}%`,
+                    `email.ilike.%${trimmedSearch}%`,
+                    `phone.ilike.%${trimmedSearch}%`
+                ]
+                if (digits && digits !== trimmedSearch) {
+                    searchOrs.push(`phone.ilike.%${digits}%`)
+                }
+                if (formatted && formatted !== trimmedSearch && formatted !== digits) {
+                    searchOrs.push(`phone.ilike.%${formatted}%`)
+                }
+                query = query.or(searchOrs.join(','))
+            }
+
+            query = query
+                .order('created_at', { ascending: false })
+                .range(page * 50, (page + 1) * 50 - 1)
+
             const { data, error } = await query
 
             if (error) {
@@ -168,7 +190,7 @@ export function AdminLeadsContent({ categoryProp, flowProp }: { categoryProp?: s
         }
 
         loadInitialData()
-    }, [stageFilter, page, categoryFilter, flowFilter, monthFilter])
+    }, [stageFilter, page, categoryFilter, flowFilter, monthFilter, searchTerm])
 
     const applyFilter = (stage: string | null) => {
         const params = new URLSearchParams()
@@ -185,6 +207,13 @@ export function AdminLeadsContent({ categoryProp, flowProp }: { categoryProp?: s
 
         const leadToAssign = leads.find(l => l.id === leadId)
         const targetValue = newCsrId === 'unassigned' ? null : newCsrId
+        const clientTxId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `tx_${Date.now()}`
+        const assignedUser = assignees.find(a => a.id === targetValue)
+        const policyTypeFormatted = formatPolicies(
+            leadToAssign?.lead_policies && leadToAssign.lead_policies.length > 0
+                ? leadToAssign.lead_policies.map(p => p.policy_type)
+                : leadToAssign?.policy_type
+        )
 
         try {
             const res = await fetch('/api/assign-lead', {
@@ -192,7 +221,13 @@ export function AdminLeadsContent({ categoryProp, flowProp }: { categoryProp?: s
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     leadId: leadId,
-                    targetUserId: targetValue
+                    targetUserId: targetValue,
+                    clientTxId: clientTxId,
+                    clientName: leadToAssign?.client_name || 'Client',
+                    policyFlow: leadToAssign?.policy_flow || 'new',
+                    insuranceCategory: leadToAssign?.insurence_category || 'personal',
+                    policyType: policyTypeFormatted,
+                    targetUserRole: assignedUser?.role || 'csr'
                 })
             })
 
@@ -217,37 +252,6 @@ export function AdminLeadsContent({ categoryProp, flowProp }: { categoryProp?: s
                         : lead.id === leadId
                     return !isMatch
                 }))
-
-                // Fail-safe notification insertion for new assignee via secure server API
-                if (targetValue) {
-                    try {
-                        const clientName = leadToAssign?.client_name || 'Client'
-                        const assignedUser = assignees.find(a => a.id === targetValue)
-                        const policyTypeFormatted = formatPolicies(
-                            leadToAssign?.lead_policies && leadToAssign.lead_policies.length > 0
-                                ? leadToAssign.lead_policies.map(p => p.policy_type)
-                                : leadToAssign?.policy_type
-                        )
-
-                        fetch('/api/notify-assignment', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                targetUserId: targetValue,
-                                leadId: leadId,
-                                clientName: clientName,
-                                policyFlow: leadToAssign?.policy_flow || 'new',
-                                insuranceCategory: leadToAssign?.insurence_category || 'personal',
-                                policyType: policyTypeFormatted,
-                                targetUserRole: assignedUser?.role || 'csr'
-                            })
-                        }).catch(err => {
-                            console.error('Failed to dispatch assignment notification:', err)
-                        })
-                    } catch (notifErr) {
-                        console.error('Error creating assignment notification:', notifErr)
-                    }
-                }
             }
         } catch (err: any) {
             console.error("Assign User Network Error:", err)
@@ -257,17 +261,7 @@ export function AdminLeadsContent({ categoryProp, flowProp }: { categoryProp?: s
         setUpdatingParams(prev => ({ ...prev, [leadId]: false }))
     }
 
-    const filteredLeads = leads.filter(lead => {
-        const term = searchTerm.toLowerCase()
-        const normalizedSearchTerm = normalizePhoneSearch(searchTerm)
-        const dbPhoneStr = lead.phone || ''
-
-        return (
-            (lead.client_name && lead.client_name.toLowerCase().includes(term)) ||
-            (lead.email && lead.email.toLowerCase().includes(term)) ||
-            (dbPhoneStr.includes(term) || extractDigits(dbPhoneStr).includes(extractDigits(term)))
-        )
-    })
+    const filteredLeads = leads
 
     return (
         <div className="w-full">

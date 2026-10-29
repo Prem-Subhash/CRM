@@ -60,6 +60,7 @@ export function AdminAssignmentsContent({ categoryProp, flowProp }: { categoryPr
             .from('profiles')
             .select('id, full_name, role')
             .in('role', ['csr', 'admin'])
+            .eq('is_active', true)
 
         const { data: pipeData } = await supabase.from('pipelines').select('id, name')
         const { data: stageData } = await supabase.from('pipeline_stages').select('id, stage_name, pipeline_id')
@@ -100,6 +101,13 @@ export function AdminAssignmentsContent({ categoryProp, flowProp }: { categoryPr
 
         const leadToAssign = leads.find(l => l.id === leadId)
         const targetValue = newAssigneeId === 'unassigned' ? null : newAssigneeId
+        const clientTxId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `tx_${Date.now()}`
+        const assignedUser = assignees.find(a => a.id === targetValue)
+        const policyTypeFormatted = formatPolicies(
+            leadToAssign?.lead_policies && leadToAssign.lead_policies.length > 0
+                ? leadToAssign.lead_policies.map(p => p.policy_type)
+                : leadToAssign?.policy_type
+        )
 
         try {
             const res = await fetch('/api/assign-lead', {
@@ -107,7 +115,13 @@ export function AdminAssignmentsContent({ categoryProp, flowProp }: { categoryPr
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     leadId: leadId,
-                    targetUserId: targetValue
+                    targetUserId: targetValue,
+                    clientTxId: clientTxId,
+                    clientName: leadToAssign?.client_name || 'Client',
+                    policyFlow: leadToAssign?.policy_flow || 'new',
+                    insuranceCategory: leadToAssign?.insurence_category || 'personal',
+                    policyType: policyTypeFormatted,
+                    targetUserRole: assignedUser?.role || 'csr'
                 })
             })
 
@@ -117,7 +131,7 @@ export function AdminAssignmentsContent({ categoryProp, flowProp }: { categoryPr
                 console.error("Assign Lead API Error:", result.error)
                 toast('Failed to update assignment: ' + (result.error || 'Unknown error'), 'error')
             } else {
-                const assigneeName = assignees.find(a => a.id === targetValue)?.full_name
+                const assigneeName = assignedUser?.full_name
                 if (targetValue && assigneeName) {
                     toast(`Lead assigned to ${assigneeName} successfully!`, 'success')
                 } else if (!targetValue) {
@@ -132,37 +146,6 @@ export function AdminAssignmentsContent({ categoryProp, flowProp }: { categoryPr
                         : lead.id === leadId
                     return isMatch ? { ...lead, assigned_csr: targetValue } : lead
                 }))
-
-                // Fail-safe notification insertion for new assignee via secure server API
-                if (targetValue) {
-                    try {
-                        const clientName = leadToAssign?.client_name || 'Client'
-                        const assignedUser = assignees.find(a => a.id === targetValue)
-                        const policyTypeFormatted = formatPolicies(
-                            leadToAssign?.lead_policies && leadToAssign.lead_policies.length > 0
-                                ? leadToAssign.lead_policies.map(p => p.policy_type)
-                                : leadToAssign?.policy_type
-                        )
-
-                        fetch('/api/notify-assignment', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                targetUserId: targetValue,
-                                leadId: leadId,
-                                clientName: clientName,
-                                policyFlow: leadToAssign?.policy_flow || 'new',
-                                insuranceCategory: leadToAssign?.insurence_category || 'personal',
-                                policyType: policyTypeFormatted,
-                                targetUserRole: assignedUser?.role || 'csr'
-                            })
-                        }).catch(err => {
-                            console.error('Failed to dispatch assignment notification:', err)
-                        })
-                    } catch (notifErr) {
-                        console.error('Error creating assignment notification:', notifErr)
-                    }
-                }
             }
         } catch (err: any) {
             console.error("Assign Lead Network Error:", err)

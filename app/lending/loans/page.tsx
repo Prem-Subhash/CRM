@@ -5,13 +5,21 @@ import { useRouter } from 'next/navigation'
 import { PlusCircle, Search, Filter, Pencil, Building2 } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { LENDING_STAGES } from '@/app/lending/lib/constants'
+import { AccurateLendingLoan } from '@/app/lending/lib/types'
 
 export default function LendingLoansDirectoryPage() {
   const router = useRouter()
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedType, setSelectedType] = useState('ALL')
-  const [loans, setLoans] = useState<any[]>([])
+  const [loans, setLoans] = useState<AccurateLendingLoan[]>([])
   const [isLoading, setIsLoading] = useState(true)
+
+  const formatCommission = (val: any) => {
+    if (val === null || val === undefined || val === '') return '—'
+    const num = Number(val)
+    if (isNaN(num)) return '—'
+    return `$${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  }
 
   useEffect(() => {
     const fetchLoans = async () => {
@@ -113,12 +121,13 @@ export default function LendingLoansDirectoryPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left table-fixed min-w-[1200px]">
+          <table className="w-full text-sm text-left table-fixed min-w-[1300px]">
              <colgroup>
                 <col className="w-[200px]" />
                 <col className="w-[120px]" />
                 <col className="w-[200px]" />
                 <col className="w-[140px]" />
+                <col className="w-[150px]" />
                 <col className="w-[240px]" />
                 <col className="w-[120px]" />
                 <col className="w-[100px]" />
@@ -129,6 +138,7 @@ export default function LendingLoansDirectoryPage() {
                 <th className="px-6 py-4 font-semibold">Loan Type</th>
                 <th className="px-6 py-4 font-semibold">Purpose & Nature</th>
                 <th className="px-6 py-4 font-semibold">Amount / Down</th>
+                <th className="px-6 py-4 font-semibold">Broker Commission</th>
                 <th className="px-6 py-4 font-semibold">Pipeline Stage</th>
                 <th className="px-6 py-4 font-semibold text-center">Inquiry Date</th>
                 <th className="px-6 py-4 font-semibold text-right">Actions</th>
@@ -137,11 +147,11 @@ export default function LendingLoansDirectoryPage() {
             <tbody className="divide-y divide-gray-100 bg-white">
               {isLoading ? (
                   <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center text-slate-500">Loading directory...</td>
+                      <td colSpan={8} className="px-6 py-12 text-center text-slate-500">Loading directory...</td>
                   </tr>
               ) : filteredLoans.length === 0 ? (
                   <tr>
-                      <td colSpan={7} className="px-6 py-12 text-center text-slate-500">No loans found matching your criteria.</td>
+                      <td colSpan={8} className="px-6 py-12 text-center text-slate-500">No loans found matching your criteria.</td>
                   </tr>
               ) : (
                 filteredLoans.map(loan => (
@@ -164,6 +174,11 @@ export default function LendingLoansDirectoryPage() {
                         {loan.purchase_price ? `$${Number(loan.purchase_price).toLocaleString()}` : '—'}
                     </p>
                     <p className="text-xs text-slate-500 mt-0.5">Down: {loan.down_payment_percent}%</p>
+                  </td>
+                  <td className="px-6 py-4">
+                    <p className="font-extrabold text-slate-900 text-base">
+                      {formatCommission(loan.broker_commission)}
+                    </p>
                   </td>
                   <td className="px-6 py-4">
                     <span className={`px-2.5 py-1 rounded-md text-[10px] font-bold uppercase whitespace-nowrap border inline-block bg-gray-100 border-gray-200 text-gray-700`}>

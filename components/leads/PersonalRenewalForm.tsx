@@ -89,9 +89,15 @@ export function PersonalRenewalForm({ assignedCsrId, onSuccess, onCancel }: Pers
         false
       )
 
-      const { error } = await saveRenewalRecords(supabase, [payload])
-      if (error) {
-        throw new Error(error.message)
+      const response = await fetch('/api/renewals/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category: 'personal', payload: [payload] }),
+      })
+
+      const resData = await response.json()
+      if (!response.ok || resData.error) {
+        throw new Error(resData.error || 'Failed to create renewal record.')
       }
 
       toast('Personal renewal policy created successfully!', 'success')

@@ -30,10 +30,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Commission values cannot be negative' }, { status: 400 })
     }
 
-    // 4. Fetch current lead state to log differences (Audit Logging)
+    // 4. Fetch current lead state and active policy_term to log differences
     const { data: currentLead, error: fetchError } = await supabaseServer
       .from('temp_leads_basics')
-      .select('expected_commission, actual_commission, accounting_status')
+      .select(`
+        id,
+        policy_id,
+        policy_term_id,
+        expected_commission,
+        actual_commission,
+        accounting_status,
+        policy_terms:policy_terms!policy_term_id (
+          id,
+          policy_id,
+          term_sequence,
+          term_status,
+          commission_amount,
+          actual_commission,
+          accounting_status
+        )
+      `)
       .eq('id', leadId)
       .single()
 
@@ -42,7 +58,33 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
     }
 
-    // 5. Update expected_commission and actual_commission in temp_leads_basics
+    const activeTerm = currentLead.policy_terms?.find((t: any) => t.id === currentLead.policy_term_id || t.term_status === 'Active')
+    const activeTermId = activeTerm?.id || currentLead.policy_term_id
+
+    // 5. Authoritative update to policy_terms (Active term ONLY)
+    if (activeTermId) {
+      const { data: updatedTerms, error: termErr } = await supabaseServer
+        .from('policy_terms')
+        .update({
+          expected_commission: expectedCommission,
+          actual_commission: actualCommission,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', activeTermId)
+        .eq('term_status', 'Active')
+        .select('id')
+
+      if (termErr) {
+        console.error('Update policy_terms failed in update-commission:', termErr)
+        return NextResponse.json({ error: 'Failed to update commission values' }, { status: 500 })
+      }
+
+      if (!updatedTerms || updatedTerms.length === 0) {
+        return NextResponse.json({ error: 'Target policy term is no longer active or was modified concurrently' }, { status: 409 })
+      }
+    }
+
+    // Operational mirror update on temp_leads_basics
     const { error: updateError } = await supabaseServer
       .from('temp_leads_basics')
       .update({
@@ -56,24 +98,29 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Failed to update commission values' }, { status: 500 })
     }
 
-    // 6. Insert Audit Log into accounting_logs
+    // 6. Insert Audit Log into accounting_logs (including lead_id, policy_id, policy_term_id)
+    const oldExpected = Number(activeTerm?.commission_amount ?? currentLead.expected_commission) || 0
+    const oldActual = Number(activeTerm?.actual_commission ?? currentLead.actual_commission) || 0
+    const currentStatus = activeTerm?.accounting_status ?? currentLead.accounting_status
+
     const { error: logError } = await supabaseServer
       .from('accounting_logs')
       .insert({
         lead_id: leadId,
+        policy_id: currentLead.policy_id || activeTerm?.policy_id || null,
+        policy_term_id: activeTermId || null,
         updated_by: user.id,
-        old_expected_commission: currentLead.expected_commission,
+        old_expected_commission: oldExpected,
         new_expected_commission: expectedCommission,
-        old_actual_commission: currentLead.actual_commission,
+        old_actual_commission: oldActual,
         new_actual_commission: actualCommission,
-        old_status: currentLead.accounting_status,
-        new_status: currentLead.accounting_status,
+        old_status: currentStatus,
+        new_status: currentStatus,
         created_at: new Date().toISOString()
       })
 
     if (logError) {
       console.error('Failed to write audit logs to accounting_logs:', logError)
-      // Do not block response since database update was completed successfully
     }
 
     return NextResponse.json({ success: true, message: 'Commission values updated successfully.' })

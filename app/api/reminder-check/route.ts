@@ -6,6 +6,20 @@ export const dynamic = 'force-dynamic' // Ensure route is not cached
 
 export async function GET(req: Request) {
     try {
+        /* ================= AUTHENTICATION CHECK (CRON / BACKGROUND TASK) ================= */
+        const authHeader = req.headers.get('authorization')
+        const cronSecretHeader = req.headers.get('x-cron-secret')
+        const cronSecret = process.env.CRON_SECRET
+
+        const isCronAuthorized =
+            (cronSecret && authHeader === `Bearer ${cronSecret}`) ||
+            (cronSecret && cronSecretHeader === cronSecret) ||
+            (process.env.NODE_ENV === 'development' && !cronSecret)
+
+        if (!isCronAuthorized) {
+            return NextResponse.json({ error: 'Unauthorized: Invalid or missing CRON_SECRET' }, { status: 401 })
+        }
+
         const now = new Date().toISOString()
 
         /* ================= FETCH LEADS NEEDING REMINDER ================= */

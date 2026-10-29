@@ -12,6 +12,7 @@ import { FIELD_LABELS } from '@/lib/fieldLabels'
 import { resolveStageHistoryFields } from '@/utils/stageFieldsConfig'
 import { toast } from '@/lib/toast'
 import { formatCurrency } from '@/lib/currency'
+import { formatDateOnly } from '@/utils/dateHelper'
 import { useSearchParams } from 'next/navigation'
 
 interface RenewalDetailViewProps {
@@ -428,7 +429,7 @@ export default function RenewalDetailView({ initialLead, onBack, refreshLead }: 
                       iconBg="bg-amber-50 text-amber-600"
                       hoverIconBg="group-hover/card:bg-amber-500 group-hover/card:text-white"
                     >
-                      <p className="text-sm font-bold text-gray-700">{new Date(lead.renewal_date).toLocaleDateString()}</p>
+                      <p className="text-sm font-bold text-gray-700">{formatDateOnly(lead.renewal_date)}</p>
                     </KpiCard>
                     <KpiCard 
                       icon={<DollarSign size={14} />} 
@@ -532,7 +533,7 @@ export default function RenewalDetailView({ initialLead, onBack, refreshLead }: 
                   iconBg="bg-amber-50 text-amber-600"
                   hoverIconBg="group-hover/card:bg-amber-500 group-hover/card:text-white"
                 >
-                  <p className="text-sm font-bold text-gray-700">{new Date(lead.renewal_date).toLocaleDateString()}</p>
+                  <p className="text-sm font-bold text-gray-700">{formatDateOnly(lead.renewal_date)}</p>
                 </KpiCard>
                 <KpiCard 
                   icon={<DollarSign size={14} />} 
@@ -680,13 +681,14 @@ export default function RenewalDetailView({ initialLead, onBack, refreshLead }: 
               <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90dvh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 my-auto relative">
             <div className="px-6 py-4 border-b flex items-center justify-between bg-gradient-to-r from-[#10B889] to-[#2E5C85] sticky top-0 z-10">
               <div>
-                <h2 className="text-xl font-bold text-white">Stage History</h2>
+                <h2 className="text-xl font-bold text-white" id="modal-title">Stage History</h2>
                 <p className="text-sm text-white">Previous updates for this renewal</p>
               </div>
               <button
                 onClick={() => setShowHistory(false)}
                 className="p-2 text-red-500 hover:text-white hover:bg-red-500 rounded-full transition-all duration-200 shadow-sm"
                 title="Close"
+                aria-label="Close stage history modal"
               >
                 <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
@@ -718,6 +720,7 @@ export default function RenewalDetailView({ initialLead, onBack, refreshLead }: 
                           }}
                           className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors border border-transparent hover:border-emerald-100"
                           title="Edit History"
+                          aria-label={`Edit history entry for ${item.stage_name}`}
                         >
                           <Edit2 size={16} />
                         </button>
@@ -829,10 +832,11 @@ export default function RenewalDetailView({ initialLead, onBack, refreshLead }: 
 
                   {/* SUBJECT */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-widest mb-1.5">
+                    <label htmlFor="renewal-email-subject" className="block text-xs font-bold text-gray-700 uppercase tracking-widest mb-1.5">
                       Subject <span className="text-red-500">*</span>
                     </label>
                     <input
+                      id="renewal-email-subject"
                       type="text"
                       value={customSubject}
                       onChange={(e) => setCustomSubject(e.target.value)}
@@ -843,10 +847,11 @@ export default function RenewalDetailView({ initialLead, onBack, refreshLead }: 
 
                   {/* BODY */}
                   <div>
-                    <label className="block text-xs font-bold text-gray-700 uppercase tracking-widest mb-1.5">
+                    <label htmlFor="renewal-email-body" className="block text-xs font-bold text-gray-700 uppercase tracking-widest mb-1.5">
                       Body <span className="text-red-500">*</span>
                     </label>
                     <textarea
+                      id="renewal-email-body"
                       value={customBody}
                       onChange={(e) => setCustomBody(e.target.value)}
                       placeholder="Write your email message here..."

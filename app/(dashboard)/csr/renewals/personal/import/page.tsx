@@ -215,20 +215,29 @@ export default function PersonalRenewalImportPage() {
             return
         }
 
-        const { error } = await saveRenewalRecords(supabase, payload)
+        try {
+            const response = await fetch('/api/renewals/import', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ category: 'personal', payload }),
+            })
+            const resData = await response.json()
 
-        if (error) {
-            setMessage({ text: `Import failed: ${error.message}`, type: 'error' })
-        } else {
-            let successMsg = `Successfully imported ${payload.length} personal renewals.`
-            if (skippedRows.length > 0) {
-                successMsg += ` Skipped ${skippedRows.length} rows due to validation errors:\n${skippedRows.slice(0, 5).join('\n')}${skippedRows.length > 5 ? '\n...' : ''}`
+            if (!response.ok || resData.error) {
+                setMessage({ text: `Import failed: ${resData.error || 'Server error'}`, type: 'error' })
+            } else {
+                let successMsg = `Successfully imported ${resData.count || payload.length} personal renewals.`
+                if (skippedRows.length > 0) {
+                    successMsg += ` Skipped ${skippedRows.length} rows due to validation errors:\n${skippedRows.slice(0, 5).join('\n')}${skippedRows.length > 5 ? '\n...' : ''}`
+                }
+                setMessage({ text: successMsg, type: 'success' })
+                setRows([])
+                setFileName(null)
+                setDetectedHeaders([])
+                setNormalizedHeaders([])
             }
-            setMessage({ text: successMsg, type: 'success' })
-            setRows([])
-            setFileName(null)
-            setDetectedHeaders([])
-            setNormalizedHeaders([])
+        } catch (err: any) {
+            setMessage({ text: `Import failed: ${err.message || 'Network error'}`, type: 'error' })
         }
 
         setLoading(false)

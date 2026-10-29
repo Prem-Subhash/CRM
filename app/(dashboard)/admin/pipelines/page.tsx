@@ -1,7 +1,14 @@
-import { supabaseServer as supabase } from '@/lib/supabaseServer'
+import { supabaseServer as supabase, createServer } from '@/lib/supabaseServer'
+import { redirect } from 'next/navigation'
 import PipelineClient from './PipelineClient'
 
 export default async function AdminPipelinesPage() {
+    const userClient = await createServer()
+    const { data: { user }, error: authError } = await userClient.auth.getUser()
+
+    if (authError || !user) {
+        redirect('/login')
+    }
 
     // 1. Fetch Pipelines
     const { data: pipelines } = await supabase

@@ -89,17 +89,12 @@ export default function ReportsClient({ csrs }: ReportsClientProps) {
   useEffect(() => {
     const fetchDropdowns = async () => {
       try {
-        const { data } = await supabase.from('temp_leads_basics').select(`
-          carrier, policy_flow, new_carrier,
-          intake_forms:temp_intake_forms ( form_data, submitted_at )
-        `)
-        if (data) {
-          const carriers = Array.from(new Set(data.flatMap(d => [d.carrier, d.new_carrier]).filter(Boolean))) as string[]
-          const flows = Array.from(new Set(data.map(d => d.policy_flow).filter(Boolean))) as string[]
-          const states = Array.from(new Set(data.map(d => resolvePolicyState(d)).filter(s => s && s !== '—'))) as string[]
-          setAvailableCarriers(carriers.sort())
-          setAvailableFlows(flows.sort())
-          setAvailableStates(states.sort())
+        const res = await fetch('/api/accounting/filter-options')
+        if (res.ok) {
+          const json = await res.json()
+          if (json.carriers) setAvailableCarriers(json.carriers)
+          if (json.flows) setAvailableFlows(json.flows)
+          if (json.states) setAvailableStates(json.states)
         }
       } catch (err) {
         console.error('Failed to load filter options:', err)
@@ -112,11 +107,26 @@ export default function ReportsClient({ csrs }: ReportsClientProps) {
     setLoading(true)
     try {
       let query = supabase.from('temp_leads_basics').select(`
-        id, client_name, policy_number, carrier, policy_flow, insurence_category,
+        id, policy_id, policy_term_id, client_name, policy_number, carrier, policy_flow, insurence_category,
         effective_date, total_premium, expected_commission, actual_commission,
         accounting_status, accounting_verified, created_at, assigned_csr,
         new_carrier, new_policy_number, new_premium,
         assigned_user_profile:profiles!fk_profile (full_name),
+        policy_terms:policy_terms!policy_term_id (
+          id,
+          policy_id,
+          term_sequence,
+          term_status,
+          carrier,
+          policy_number,
+          written_premium,
+          effective_date,
+          expiration_date,
+          expected_commission,
+          actual_commission,
+          accounting_status,
+          accounting_verified
+        ),
         intake_forms:temp_intake_forms ( form_data, submitted_at )
       `)
 
@@ -131,7 +141,7 @@ export default function ReportsClient({ csrs }: ReportsClientProps) {
       }
       if (accountingVerified !== 'all') query = query.eq('accounting_verified', accountingVerified === 'verified')
       if (category !== 'all') query = query.ilike('insurence_category', `%${category}%`)
-      if (policyFlow !== 'all') query = query.ilike('policy_flow', `%${policyFlow}%`)
+      if (policyFlow !== 'all') query = query.eq('policy_flow', policyFlow)
       if (carrier !== 'all') query = query.or(`carrier.eq.${carrier},new_carrier.eq.${carrier}`)
       if (assignedCsr !== 'all') query = query.eq('assigned_csr', assignedCsr)
 
@@ -167,26 +177,65 @@ export default function ReportsClient({ csrs }: ReportsClientProps) {
     fetchReportData() 
   }, [startDate, endDate, accountingStatus, accountingVerified, category, policyFlow, carrier, state, assignedCsr])
 
+  /* ── Authoritative Term Helper ── */
+  const getAuthoritativeTerm = (r: any) => {
+    if (Array.isArray(r.policy_terms)) {
+      return r.policy_terms.find((t: any) => t.term_status === 'Active') || r.policy_terms[0] || null
+    }
+    return typeof r.policy_terms === 'object' ? r.policy_terms : null
+  }
+
   /* ── Aggregates ── */
-  const totalPremiums = leads.reduce((s, r) => s + (Number(getActivePolicy(r).activePremium) || 0), 0)
+  const totalPremiums = leads.reduce((s, r) => {
+    const activeTerm = getAuthoritativeTerm(r)
+    const prem = (activeTerm && activeTerm.written_premium !== null && activeTerm.written_premium !== undefined)
+      ? Number(activeTerm.written_premium) || 0
+      : Number(getActivePolicy(r).activePremium) || 0
+    return s + prem
+  }, 0)
+
   const averagePremium = leads.length > 0 ? totalPremiums / leads.length : 0
-  const expectedCommissions = leads.reduce((s, r) => s + (Number(r.expected_commission) || 0), 0)
-  const actualCommissions = leads.reduce((s, r) => s + (Number(r.actual_commission) || 0), 0)
+
+  const expectedCommissions = leads.reduce((s, r) => {
+    const activeTerm = getAuthoritativeTerm(r)
+    const exp = (activeTerm && activeTerm.expected_commission !== null && activeTerm.expected_commission !== undefined)
+      ? Number(activeTerm.expected_commission) || 0
+      : Number(r.expected_commission) || 0
+    return s + exp
+  }, 0)
+
+  const actualCommissions = leads.reduce((s, r) => {
+    const activeTerm = getAuthoritativeTerm(r)
+    const act = (activeTerm && activeTerm.actual_commission !== null && activeTerm.actual_commission !== undefined)
+      ? Number(activeTerm.actual_commission) || 0
+      : Number(r.actual_commission) || 0
+    return s + act
+  }, 0)
+
   const commissionDiscrepancies = expectedCommissions - actualCommissions
   const collectionPct = expectedCommissions > 0 ? (actualCommissions / expectedCommissions) * 100 : 0
 
   const premiumsByFlow = leads.reduce((acc: Record<string, number>, l) => {
-    const k = l.policy_flow || 'Unspecified'; acc[k] = (acc[k] || 0) + (Number(getActivePolicy(l).activePremium) || 0); return acc
+    const activeTerm = getAuthoritativeTerm(l)
+    const prem = (activeTerm && activeTerm.written_premium !== null && activeTerm.written_premium !== undefined)
+      ? Number(activeTerm.written_premium) || 0
+      : Number(getActivePolicy(l).activePremium) || 0
+    const k = l.policy_flow || 'Unspecified'; acc[k] = (acc[k] || 0) + prem; return acc
   }, {})
 
   const premiumsByCarrier = leads.reduce((acc: Record<string, number>, l) => {
-    const active = getActivePolicy(l)
-    const k = active.activeCarrier || 'Unspecified'; acc[k] = (acc[k] || 0) + (Number(active.activePremium) || 0); return acc
+    const activeTerm = getAuthoritativeTerm(l)
+    const active = getActivePolicy({ ...l, policy_terms: activeTerm || l.policy_terms })
+    const prem = (activeTerm && activeTerm.written_premium !== null && activeTerm.written_premium !== undefined)
+      ? Number(activeTerm.written_premium) || 0
+      : Number(active.activePremium) || 0
+    const k = active.activeCarrier || 'Unspecified'; acc[k] = (acc[k] || 0) + prem; return acc
   }, {})
 
   let reconciledCount = 0, discrepancyCount = 0, unreconciledCount = 0, pendingCount = 0
   leads.forEach(l => {
-    const s = l.accounting_status?.toLowerCase()
+    const activeTerm = getAuthoritativeTerm(l)
+    const s = (activeTerm?.accounting_status || l.accounting_status)?.toLowerCase()
     if (s === 'reconciled') reconciledCount++
     else if (s === 'discrepancy') discrepancyCount++
     else if (s === 'unreconciled') unreconciledCount++
@@ -198,8 +247,23 @@ export default function ReportsClient({ csrs }: ReportsClientProps) {
     if (leads.length === 0) { showToast('No data to export.', 'error'); return }
     const headers = ['Client Name', 'Policy Number', 'Carrier', 'Policy Flow', 'Insurance Category', 'State', 'Effective Date', 'Total Premium', 'Expected Commission', 'Actual Commission', 'Accounting Status', 'Accounting Verified', 'Created Date']
     const rows = leads.map(lead => {
-      const active = getActivePolicy(lead)
+      const activeTerm = getAuthoritativeTerm(lead)
+      const active = getActivePolicy({ ...lead, policy_terms: activeTerm || lead.policy_terms })
       const resolvedState = resolvePolicyState(lead)
+      const prem = (activeTerm && activeTerm.written_premium !== null && activeTerm.written_premium !== undefined)
+        ? Number(activeTerm.written_premium) || 0
+        : active.activePremium ?? 0
+      const exp = (activeTerm && activeTerm.expected_commission !== null && activeTerm.expected_commission !== undefined)
+        ? Number(activeTerm.expected_commission) || 0
+        : lead.expected_commission ?? 0
+      const act = (activeTerm && activeTerm.actual_commission !== null && activeTerm.actual_commission !== undefined)
+        ? Number(activeTerm.actual_commission) || 0
+        : lead.actual_commission ?? 0
+      const status = activeTerm?.accounting_status || lead.accounting_status || 'unreconciled'
+      const verified = activeTerm?.accounting_verified !== undefined && activeTerm?.accounting_verified !== null
+        ? Boolean(activeTerm.accounting_verified)
+        : Boolean(lead.accounting_verified)
+
       return [
         `"${(lead.client_name || '').replace(/"/g, '""')}"`,
         `"${(active.activePolicyNumber || '').replace(/"/g, '""')}"`,
@@ -207,12 +271,12 @@ export default function ReportsClient({ csrs }: ReportsClientProps) {
         `"${(lead.policy_flow || '').replace(/"/g, '""')}"`,
         `"${(lead.insurence_category || '').replace(/"/g, '""')}"`,
         `"${resolvedState}"`,
-        lead.effective_date || 'N/A',
-        active.activePremium ?? 0,
-        lead.expected_commission ?? 0,
-        lead.actual_commission ?? 0,
-        lead.accounting_status || 'unreconciled',
-        lead.accounting_verified ? 'YES' : 'NO',
+        activeTerm?.effective_date || lead.effective_date || 'N/A',
+        prem,
+        exp,
+        act,
+        status,
+        verified ? 'YES' : 'NO',
         lead.created_at ? new Date(lead.created_at).toLocaleDateString() : 'N/A',
       ].join(',')
     })

@@ -7,6 +7,7 @@ import UpdateStageModal from '@/components/pipeline/UpdateStageModal'
 import { ArrowLeft } from 'lucide-react'
 import { formatPolicies } from '@/utils/formatPolicies'
 import PageBackButton from '@/components/ui/PageBackButton'
+import { canAccessInsuranceCategory } from '@/utils/authClient'
 
 
 /* ── helpers ──────────────────────────────────────────────── */
@@ -134,7 +135,7 @@ export default function LeadReviewPage() {
         .select(`
           *,
           lead_policies(policy_type),
-          pipeline_stages (
+          pipeline_stages!temp_leads_basics_stage_pipeline_fk (
             id,
             stage_name
           )
@@ -146,6 +147,19 @@ export default function LeadReviewPage() {
         setError('Lead not found')
         setLoading(false)
         return
+      }
+
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        const { data: prof } = await supabase.from('profiles').select('id, role, insurance_access').eq('id', user.id).single()
+        if (!canAccessInsuranceCategory(prof, leadData.insurence_category)) {
+          router.replace('/unauthorized')
+          return
+        }
+        if (prof?.role === 'csr' && leadData.assigned_csr !== user.id) {
+          router.replace('/unauthorized')
+          return
+        }
       }
 
       const { data: formData } = await supabase

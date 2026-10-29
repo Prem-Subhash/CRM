@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabaseServer'
-import { authenticateApiRequest } from '@/utils/auth'
+import { authenticateApiRequest, authorizeLeadAccess } from '@/utils/auth'
 
 export async function PATCH(req: Request) {
   try {
@@ -32,6 +32,11 @@ export async function PATCH(req: Request) {
 
     const leadId = currentHistory.lead_id
     const stageName = currentHistory.stage_name
+
+    const authLead = await authorizeLeadAccess(auth.profile, leadId)
+    if (!authLead.authorized) {
+      return NextResponse.json({ error: authLead.error }, { status: authLead.status })
+    }
 
     const isUuid = (str: any) => typeof str === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
 

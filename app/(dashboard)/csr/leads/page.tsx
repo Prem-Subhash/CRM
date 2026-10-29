@@ -5,7 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabaseClient'
 import { Eye, Send, Search } from 'lucide-react'
-import { extractDigits, normalizePhoneSearch, formatDatabasePhone } from '@/utils/phoneFormatter'
+import { extractDigits, normalizePhoneSearch, formatDatabasePhone, formatPhoneInput } from '@/utils/phoneFormatter'
 import { formatPolicies } from '@/utils/formatPolicies'
 import Loading, { Spinner } from '@/components/ui/Loading'
 
@@ -50,7 +50,7 @@ export default function MyLeadsPage() {
 
   useEffect(() => {
     setPage(0)
-  }, [stageFilter])
+  }, [stageFilter, searchTerm])
 
   /* ================= LOAD LEADS ================= */
 
@@ -74,20 +74,41 @@ export default function MyLeadsPage() {
           insurence_category,
           policy_flow,
           created_at,
-          current_stage:pipeline_stages!inner (
+          current_stage:pipeline_stages!temp_leads_basics_stage_pipeline_fk!inner (
             stage_name
           )
         `)
         .eq('assigned_csr', user.id)
         .eq('insurence_category', 'personal')
         .eq('policy_flow', 'new')
-        .order('created_at', { ascending: false })
-        .range(page * 50, (page + 1) * 50 - 1)
 
       /* ✅ FIXED FILTER */
       if (stageFilter) {
         query = query.eq('current_stage.stage_name', stageFilter)
       }
+
+      const trimmedSearch = searchTerm.trim()
+      if (trimmedSearch) {
+        const digits = extractDigits(trimmedSearch)
+        const formatted = digits ? formatPhoneInput(digits) : ''
+
+        const searchOrs: string[] = [
+          `client_name.ilike.%${trimmedSearch}%`,
+          `email.ilike.%${trimmedSearch}%`,
+          `phone.ilike.%${trimmedSearch}%`
+        ]
+        if (digits && digits !== trimmedSearch) {
+          searchOrs.push(`phone.ilike.%${digits}%`)
+        }
+        if (formatted && formatted !== trimmedSearch && formatted !== digits) {
+          searchOrs.push(`phone.ilike.%${formatted}%`)
+        }
+        query = query.or(searchOrs.join(','))
+      }
+
+      query = query
+        .order('created_at', { ascending: false })
+        .range(page * 50, (page + 1) * 50 - 1)
 
       const { data, error } = await query
 
@@ -110,7 +131,7 @@ export default function MyLeadsPage() {
     }
 
     loadLeads()
-  }, [stageFilter, page])
+  }, [stageFilter, page, searchTerm])
 
   /* ================= FILTER HANDLER ================= */
 
@@ -125,17 +146,7 @@ export default function MyLeadsPage() {
     }
   }
 
-  const filteredLeads = leads.filter(lead => {
-    const term = searchTerm.toLowerCase()
-    const normalizedSearchTerm = normalizePhoneSearch(searchTerm)
-    const dbPhoneStr = lead.phone || ''
-
-    return (
-      (lead.client_name && lead.client_name.toLowerCase().includes(term)) ||
-      (lead.email && lead.email.toLowerCase().includes(term)) ||
-      (dbPhoneStr.includes(term) || extractDigits(dbPhoneStr).includes(extractDigits(term)))
-    )
-  })
+  const filteredLeads = leads
 
   /* ================= UI ================= */
 

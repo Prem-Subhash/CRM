@@ -52,6 +52,14 @@ export async function POST(req: Request) {
       )
     }
 
+    /* ================= PIPELINE VALIDATION (DE05) ================= */
+    if (lead.pipeline_id && stage.pipeline_id && lead.pipeline_id !== stage.pipeline_id) {
+      return NextResponse.json(
+        { error: 'Invalid stage: stage does not belong to the lead pipeline' },
+        { status: 400 }
+      )
+    }
+
     const mandatoryFields = stage.mandatory_fields || {}
 
     const mergedMetadata = {
@@ -454,6 +462,46 @@ export async function POST(req: Request) {
       updatePayload.stage_metadata = mergedMetadata
     }
 
+    const atomicStages = ['Completed', 'Completed (Same)', 'Completed (Switch)', 'Policy Bound']
+
+    if (atomicStages.includes(stage.stage_name)) {
+      // Invoke atomic PostgreSQL RPC for policy master, terms, lead update, stage history snapshot, and outbox event
+      const { data: rpcRes, error: rpcError } = await supabaseServer.rpc('bind_policy_stage_transition', {
+        p_lead_id: leadId,
+        p_stage_id: stageId,
+        p_user_id: auth.user.id,
+        p_update_payload: updatePayload,
+        p_stage_metadata: mergedMetadata,
+        p_history_metadata: stageMetadata,
+      })
+
+      if (rpcError) {
+        console.error('Atomic stage transition RPC failed:', rpcError)
+        return NextResponse.json(
+          { error: rpcError.message || 'Failed to execute atomic stage transition' },
+          { status: 500 }
+        )
+      }
+
+      if (rpcRes?.policy_term_id && isCommissionEnabledTransition) {
+        await supabaseServer
+          .from('policy_terms')
+          .update({
+            gross_commission: updatePayload.gross_commission,
+            admin_charge: updatePayload.admin_charge,
+            net_commission: updatePayload.net_commission,
+            referral_payout: updatePayload.referral_payout,
+            company_commission: updatePayload.company_commission,
+            expected_commission: updatePayload.expected_commission,
+            locked_carrier_percent: updatePayload.locked_carrier_percent,
+            locked_referral_percent: updatePayload.locked_referral_percent,
+          })
+          .eq('id', rpcRes.policy_term_id)
+      }
+
+      return NextResponse.json({ success: true, ...rpcRes })
+    }
+
     const { error: updateError } = await supabaseServer
       .from('temp_leads_basics')
       .update(updatePayload)
@@ -468,7 +516,6 @@ export async function POST(req: Request) {
     }
 
     // Insert history snapshot after successful update
-    // We store the EXACT payload received from the form as a snapshot
     const { error: historyError } = await supabaseServer
       .from('lead_stage_history')
       .insert([
@@ -482,7 +529,6 @@ export async function POST(req: Request) {
 
     if (historyError) {
       console.error('Stage history insertion failed:', historyError)
-      // Proceed returning success since primary update succeeded
     }
 
     return NextResponse.json({ success: true })

@@ -7,6 +7,20 @@ export interface PolicyRecord {
   new_carrier?: string | null
   new_policy_number?: string | null
   new_premium?: number | string | null
+  policy_term_id?: string | null
+  policy_terms?: {
+    carrier?: string | null
+    policy_number?: string | null
+    written_premium?: number | string | null
+    term_status?: string | null
+    [key: string]: any
+  } | Array<{
+    carrier?: string | null
+    policy_number?: string | null
+    written_premium?: number | string | null
+    term_status?: string | null
+    [key: string]: any
+  }> | null
   [key: string]: any
 }
 
@@ -19,10 +33,10 @@ export interface ActivePolicyResult {
 
 /**
  * Resolves the active carrier, active policy number, and active premium for any lead or renewal record.
- * Following client business rules:
- * - When new_carrier, new_policy_number, or new_premium are present (from a "Completed (Switch)"),
- *   those values become the ACTIVE policy across the CRM.
- * - Otherwise, falls back cleanly to existing base policy attributes without duplicating fallback expressions.
+ * Synchronous Helper:
+ * 1. Checks pre-fetched policy_terms relational join data if present.
+ * 2. Fallbacks to new_carrier/new_policy_number/new_premium when present (switched).
+ * 3. Fallbacks cleanly to existing base policy attributes without duplicating fallback expressions.
  */
 export function getActivePolicy(record?: PolicyRecord | null): ActivePolicyResult {
   if (!record) {
@@ -34,22 +48,39 @@ export function getActivePolicy(record?: PolicyRecord | null): ActivePolicyResul
     }
   }
 
+  // Inspect pre-fetched policy_terms relational join if attached
+  let termObj: any = null
+  if (record.policy_terms) {
+    if (Array.isArray(record.policy_terms)) {
+      termObj = record.policy_terms.find((t: any) => t.term_status === 'Active') || record.policy_terms[0] || null
+    } else if (typeof record.policy_terms === 'object') {
+      termObj = record.policy_terms
+    }
+  }
+
   const isSwitched = Boolean(
     (record.new_carrier && record.new_carrier.toString().trim() !== '') ||
     (record.new_policy_number && record.new_policy_number.toString().trim() !== '') ||
     (record.new_premium !== null && record.new_premium !== undefined && record.new_premium !== '')
   )
 
-  const activeCarrier = (record.new_carrier && record.new_carrier.toString().trim() !== '') 
-    ? record.new_carrier.toString() 
-    : (record.carrier ? record.carrier.toString() : null)
+  const activeCarrier = (termObj && termObj.carrier && termObj.carrier.toString().trim() !== '')
+    ? termObj.carrier.toString()
+    : ((record.new_carrier && record.new_carrier.toString().trim() !== '')
+      ? record.new_carrier.toString()
+      : (record.carrier ? record.carrier.toString() : null))
 
-  const activePolicyNumber = (record.new_policy_number && record.new_policy_number.toString().trim() !== '') 
-    ? record.new_policy_number.toString() 
-    : (record.policy_number ? record.policy_number.toString() : null)
+  const activePolicyNumber = (termObj && termObj.policy_number && termObj.policy_number.toString().trim() !== '')
+    ? termObj.policy_number.toString()
+    : ((record.new_policy_number && record.new_policy_number.toString().trim() !== '')
+      ? record.new_policy_number.toString()
+      : (record.policy_number ? record.policy_number.toString() : null))
 
   let activePremiumVal = 0
-  if (record.new_premium !== null && record.new_premium !== undefined && record.new_premium !== '') {
+  if (termObj && termObj.written_premium !== null && termObj.written_premium !== undefined && termObj.written_premium !== '') {
+    const parsed = Number(termObj.written_premium)
+    if (!isNaN(parsed)) activePremiumVal = parsed
+  } else if (record.new_premium !== null && record.new_premium !== undefined && record.new_premium !== '') {
     const parsed = Number(record.new_premium)
     if (!isNaN(parsed)) activePremiumVal = parsed
   } else if (record.total_premium !== null && record.total_premium !== undefined && record.total_premium !== '') {

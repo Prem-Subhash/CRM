@@ -8,6 +8,8 @@ import { formatPolicies } from '@/utils/formatPolicies'
 import Loading from '@/components/ui/Loading'
 import { formatCurrency } from '@/lib/currency'
 import { getActivePolicy } from '@/utils/activePolicyHelper'
+import { formatDateOnly } from '@/utils/dateHelper'
+import { extractDigits, formatPhoneInput } from '@/utils/phoneFormatter'
 
 type Renewal = {
     id: string
@@ -51,7 +53,7 @@ function PersonalRenewalContent({ createRoute }: { createRoute?: string }) {
 
     useEffect(() => {
         setPage(0)
-    }, [monthFilter])
+    }, [monthFilter, searchTerm])
 
     const load = async () => {
         setLoading(true)
@@ -84,7 +86,7 @@ function PersonalRenewalContent({ createRoute }: { createRoute?: string }) {
       notes,
       insurence_category,
       business_name,
-      pipeline_stage:pipeline_stages (
+      pipeline_stage:pipeline_stages!temp_leads_basics_stage_pipeline_fk (
         stage_name,
         pipeline_id
       )
@@ -96,10 +98,6 @@ function PersonalRenewalContent({ createRoute }: { createRoute?: string }) {
             query = query.eq('assigned_csr', user.id)
         }
 
-        query = query
-            .order('renewal_date', { ascending: true })
-            .range(page * 10, (page + 1) * 10 - 1)
-
         if (monthFilter) {
             const startOfMonth = `${monthFilter}-01`
             const [year, month] = monthFilter.split('-')
@@ -109,6 +107,34 @@ function PersonalRenewalContent({ createRoute }: { createRoute?: string }) {
 
             query = query.gte('renewal_date', startOfMonth).lt('renewal_date', nextDate)
         }
+
+        const trimmedSearch = searchTerm.trim()
+        if (trimmedSearch) {
+            const digits = extractDigits(trimmedSearch)
+            const formatted = digits ? formatPhoneInput(digits) : ''
+
+            const searchOrs: string[] = [
+                `client_name.ilike.%${trimmedSearch}%`,
+                `business_name.ilike.%${trimmedSearch}%`,
+                `policy_number.ilike.%${trimmedSearch}%`,
+                `new_policy_number.ilike.%${trimmedSearch}%`,
+                `carrier.ilike.%${trimmedSearch}%`,
+                `new_carrier.ilike.%${trimmedSearch}%`,
+                `email.ilike.%${trimmedSearch}%`,
+                `phone.ilike.%${trimmedSearch}%`
+            ]
+            if (digits && digits !== trimmedSearch) {
+                searchOrs.push(`phone.ilike.%${digits}%`)
+            }
+            if (formatted && formatted !== trimmedSearch && formatted !== digits) {
+                searchOrs.push(`phone.ilike.%${formatted}%`)
+            }
+            query = query.or(searchOrs.join(','))
+        }
+
+        query = query
+            .order('renewal_date', { ascending: true })
+            .range(page * 10, (page + 1) * 10 - 1)
 
         const { data, error } = await query
 
@@ -132,7 +158,7 @@ function PersonalRenewalContent({ createRoute }: { createRoute?: string }) {
 
     useEffect(() => {
         load()
-    }, [monthFilter, page])
+    }, [monthFilter, page, searchTerm])
 
     const handleQuickSave = async (id: string) => {
         const val = editValue === '' ? null : Number(editValue)
@@ -147,17 +173,7 @@ function PersonalRenewalContent({ createRoute }: { createRoute?: string }) {
         }
     }
 
-    const filteredRenewals = renewals.filter(r => {
-        const term = searchTerm.toLowerCase()
-        return (
-            (r.client_name && r.client_name.toLowerCase().includes(term)) ||
-            (r['business_name'] && r['business_name'].toLowerCase().includes(term)) ||
-            (r.policy_number && r.policy_number.toLowerCase().includes(term)) ||
-            (r.new_policy_number && r.new_policy_number.toLowerCase().includes(term)) ||
-            (r.carrier && r.carrier.toLowerCase().includes(term)) ||
-            (r.new_carrier && r.new_carrier.toLowerCase().includes(term))
-        )
-    })
+    const filteredRenewals = renewals
 
     return (
         <div className="w-full max-w-[1600px] mx-auto min-h-screen">
@@ -186,6 +202,7 @@ function PersonalRenewalContent({ createRoute }: { createRoute?: string }) {
                             type="month"
                             value={monthFilter}
                             onChange={(e) => setMonthFilter(e.target.value)}
+                            aria-label="Filter renewals by month"
                             className="w-full pl-10 pr-8 py-2.5 border border-emerald-600 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-emerald-500 shadow-sm text-gray-700 text-sm cursor-pointer"
                         />
                         {monthFilter && (
@@ -193,6 +210,7 @@ function PersonalRenewalContent({ createRoute }: { createRoute?: string }) {
                                 onClick={() => setMonthFilter('')}
                                 className="absolute right-3 text-gray-400 hover:text-gray-600 p-0.5 text-lg leading-none"
                                 title="Clear filter"
+                                aria-label="Clear month filter"
                             >
                                 ×
                             </button>
@@ -225,6 +243,7 @@ function PersonalRenewalContent({ createRoute }: { createRoute?: string }) {
                         <input
                             type="text"
                             placeholder="Search client, policy ID, or carrier..."
+                            aria-label="Search renewals by client, policy ID, or carrier"
                             className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
@@ -291,7 +310,7 @@ function PersonalRenewalContent({ createRoute }: { createRoute?: string }) {
                                                 {active.activePolicyNumber || '—'}
                                             </td>
                                             <td className="px-4 sm:px-6 py-4 text-gray-700 font-semibold whitespace-nowrap text-center align-top">
-                                                {new Date(r.renewal_date).toLocaleDateString()}
+                                                {formatDateOnly(r.renewal_date)}
                                             </td>
                                             <td className="px-4 sm:px-6 py-4 text-gray-700 break-words align-top">
                                                 {active.activeCarrier || '—'}
@@ -305,6 +324,7 @@ function PersonalRenewalContent({ createRoute }: { createRoute?: string }) {
                                                         <input
                                                             type="number"
                                                             autoFocus
+                                                            aria-label={`Renewal premium for ${r['business_name'] || r.client_name || 'client'}`}
                                                             className="w-full px-2 py-1 border-2 border-cyan-400 rounded-md outline-none text-sm font-bold"
                                                             value={editValue}
                                                             onChange={e => setEditValue(e.target.value)}
@@ -352,6 +372,7 @@ function PersonalRenewalContent({ createRoute }: { createRoute?: string }) {
                                                     href={`/csr/renewals/${r.id}`}
                                                     className="text-[#E07A5F] hover:text-[#E07A5F]/80 transition-colors p-1 rounded-md hover:bg-gray-100 inline-flex items-center justify-center"
                                                     title="View Renewal Details"
+                                                    aria-label={`View renewal details for ${r['business_name'] || r.client_name || 'client'}`}
                                                 >
                                                     <Eye size={18} />
                                                 </Link>

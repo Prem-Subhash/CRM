@@ -40,6 +40,9 @@ export default async function AccountingDashboard() {
   const { data: leads, error: leadsError } = await supabase
     .from('temp_leads_basics')
     .select(`
+      id,
+      policy_id,
+      policy_term_id,
       total_premium, 
       new_premium,
       carrier,
@@ -50,7 +53,19 @@ export default async function AccountingDashboard() {
       actual_commission, 
       accounting_status,
       insurence_category,
-      policy_flow
+      policy_flow,
+      policy_terms:policy_terms!policy_term_id (
+        id,
+        policy_id,
+        term_sequence,
+        term_status,
+        carrier,
+        policy_number,
+        written_premium,
+        expected_commission,
+        actual_commission,
+        accounting_status
+      )
     `)
 
   if (leadsError) {
@@ -80,10 +95,23 @@ export default async function AccountingDashboard() {
 
   if (leads) {
     for (const lead of leads) {
+      const activeTerm = Array.isArray(lead.policy_terms)
+        ? lead.policy_terms.find((t: any) => t.term_status === 'Active') || lead.policy_terms[0] || null
+        : (typeof lead.policy_terms === 'object' ? lead.policy_terms : null);
+
       const active = getActivePolicy(lead)
-      const prem = Number(active.activePremium) || 0
-      const exp = Number(lead.expected_commission) || 0
-      const act = Number(lead.actual_commission) || 0
+
+      const prem = (activeTerm && activeTerm.written_premium !== null && activeTerm.written_premium !== undefined)
+        ? Number(activeTerm.written_premium) || 0
+        : Number(active.activePremium) || 0
+
+      const exp = (activeTerm && activeTerm.expected_commission !== null && activeTerm.expected_commission !== undefined)
+        ? Number(activeTerm.expected_commission) || 0
+        : Number(lead.expected_commission) || 0
+
+      const act = (activeTerm && activeTerm.actual_commission !== null && activeTerm.actual_commission !== undefined)
+        ? Number(activeTerm.actual_commission) || 0
+        : Number(lead.actual_commission) || 0
 
       totalPremium += prem
       totalExpectedComm += exp
@@ -110,7 +138,7 @@ export default async function AccountingDashboard() {
         }
       }
 
-      const status = lead.accounting_status
+      const status = activeTerm?.accounting_status || lead.accounting_status
       if (status === 'reconciled') {
         reconciledCount++
       } else if (status === 'discrepancy') {

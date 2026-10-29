@@ -109,7 +109,7 @@ export default function TopBar({ onMenuClick }: { onMenuClick: () => void }) {
                     id,
                     client_name,
                     created_at,
-                    current_stage:pipeline_stages (
+                    current_stage:pipeline_stages!temp_leads_basics_stage_pipeline_fk (
                         stage_name
                     )
                 `)

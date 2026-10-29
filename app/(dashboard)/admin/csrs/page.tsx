@@ -9,7 +9,7 @@ export default async function AdminCSRsPage() {
     // Fetch CSR profiles
     const { data: csrs } = await supabase
         .from('profiles')
-        .select('id, full_name, email, created_at, insurance_access')
+        .select('id, full_name, email, created_at, insurance_access, is_active')
         .eq('role', 'csr')
         .order('created_at', { ascending: false })
 
@@ -26,6 +26,7 @@ export default async function AdminCSRsPage() {
                                     <th className="p-4 font-semibold">CSR</th>
                                     <th className="p-4 font-semibold">Email Address</th>
                                     <th className="p-4 font-semibold">Insurance Access</th>
+                                    <th className="p-4 font-semibold">Status</th>
                                     <th className="p-4 font-semibold">Joined Date</th>
                                     <th className="p-4 font-semibold text-right">Action</th>
                                 </tr>
@@ -54,6 +55,11 @@ export default async function AdminCSRsPage() {
                                                 </div>
                                             )}
                                         </td>
+                                        <td className="p-4">
+                                            <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${csr.is_active !== false ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
+                                                {csr.is_active !== false ? 'Active' : 'Inactive'}
+                                            </span>
+                                        </td>
                                         <td className="p-4 text-gray-500 text-sm">
                                             {new Date(csr.created_at).toLocaleDateString()}
                                         </td>
@@ -69,7 +75,7 @@ export default async function AdminCSRsPage() {
                                 ))}
                                 {(!csrs || csrs.length === 0) && (
                                     <tr>
-                                        <td colSpan={5} className="p-8 text-center text-gray-500">
+                                        <td colSpan={6} className="p-8 text-center text-gray-500">
                                             No CSRs found in the system.
                                         </td>
                                     </tr>

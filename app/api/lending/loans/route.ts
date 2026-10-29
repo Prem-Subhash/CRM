@@ -7,6 +7,8 @@ function sanitizePayloadForPostgres(payload: Record<string, any>): Record<string
   const NUMERIC_FIELDS = [
     'purchase_price',
     'down_payment_percent',
+    'broker_commission',
+    'estimated_credit_score',
     'accutax_amount_requested',
     'accurate_lending_amount_requested',
     'internal_amount_received'
@@ -116,6 +118,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (loanData.estimated_credit_score !== undefined && loanData.estimated_credit_score !== null && loanData.estimated_credit_score !== '') {
+      if (isNaN(Number(loanData.estimated_credit_score))) {
+        return NextResponse.json({ error: 'Estimated credit score must be a valid number.' }, { status: 400 });
+      }
+    }
+
     const rawPayload = {
       current_stage: loanData.current_stage || '1. New Loan',
       inquiry_date: loanData.inquiry_date || new Date().toISOString().split('T')[0],
@@ -123,6 +131,7 @@ export async function POST(request: NextRequest) {
       client_legal_name: loanData.client_legal_name || null,
       client_phone: loanData.client_phone || null,
       client_email: loanData.client_email || null,
+      estimated_credit_score: loanData.estimated_credit_score !== undefined ? loanData.estimated_credit_score : null,
       loan_type: loanData.loan_type || 'COMMERCIAL',
       loan_purpose: loanData.loan_purpose || null,
       nature_of_loan: loanData.nature_of_loan || null,
@@ -130,6 +139,7 @@ export async function POST(request: NextRequest) {
       loan_summary: loanData.loan_summary || null,
       purchase_price: loanData.purchase_price,
       down_payment_percent: loanData.down_payment_percent,
+      broker_commission: loanData.broker_commission !== undefined ? loanData.broker_commission : null,
       lead_source: loanData.lead_source || null,
       referral_name: loanData.referral_name || null,
       assigned_user: auth.user.id,
@@ -140,14 +150,32 @@ export async function POST(request: NextRequest) {
 
     const sanitizedPayload = sanitizePayloadForPostgres(rawPayload);
 
-    const { data: loan, error } = await supabaseServer
+    let loan: any;
+    const { data: insertedLoan, error: insertError } = await supabaseServer
       .from('accurate_lending_loans')
       .insert([sanitizedPayload])
       .select()
       .single();
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 400 });
+    if (insertError) {
+      if (insertError.code === '42703' || insertError.message?.includes('broker_commission')) {
+        const fallbackPayload = { ...sanitizedPayload };
+        delete fallbackPayload.broker_commission;
+        const { data: retryLoan, error: retryError } = await supabaseServer
+          .from('accurate_lending_loans')
+          .insert([fallbackPayload])
+          .select()
+          .single();
+
+        if (retryError) {
+          return NextResponse.json({ error: retryError.message }, { status: 400 });
+        }
+        loan = { ...retryLoan, broker_commission: sanitizedPayload.broker_commission };
+      } else {
+        return NextResponse.json({ error: insertError.message }, { status: 400 });
+      }
+    } else {
+      loan = insertedLoan;
     }
 
     // Insert partners if any
@@ -225,6 +253,7 @@ export async function POST(request: NextRequest) {
         changed_at: new Date().toISOString(),
         stage_data: {
           _updated_by: updatedBy,
+          broker_commission: loanData.broker_commission !== undefined ? loanData.broker_commission : null,
         },
       });
     } catch (historyErr) {

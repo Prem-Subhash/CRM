@@ -15,7 +15,49 @@ export const createClient = () => {
   if (!_client) {
     _client = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            if (typeof document === 'undefined') return []
+            const cookies: { name: string; value: string }[] = []
+            document.cookie.split(';').forEach((cookie) => {
+              const [name, ...rest] = cookie.trim().split('=')
+              if (name) {
+                cookies.push({ name, value: rest.join('=') })
+              }
+            })
+            return cookies
+          },
+          setAll(cookiesToSet) {
+            if (typeof document === 'undefined') return
+            const isRememberMeFalse = document.cookie.split(';').some(item => item.trim() === 'sb-remember-me=false')
+
+            cookiesToSet.forEach(({ name, value, options }) => {
+              const cookieOpts = { ...options }
+              if (isRememberMeFalse && value !== '') {
+                delete cookieOpts.maxAge
+                delete cookieOpts.expires
+              }
+
+              let cookieString = `${encodeURIComponent(name)}=${encodeURIComponent(value)}; path=${cookieOpts.path || '/'}`
+              if (cookieOpts.maxAge !== undefined && cookieOpts.maxAge !== null) {
+                cookieString += `; max-age=${cookieOpts.maxAge}`
+              }
+              if (cookieOpts.domain) {
+                cookieString += `; domain=${cookieOpts.domain}`
+              }
+              if (cookieOpts.sameSite) {
+                cookieString += `; samesite=${cookieOpts.sameSite}`
+              }
+              if (cookieOpts.secure) {
+                cookieString += `; secure`
+              }
+              document.cookie = cookieString
+            })
+          }
+        }
+      }
     )
   }
   return _client;

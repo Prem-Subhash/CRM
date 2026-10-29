@@ -196,9 +196,133 @@ export function buildRenewalPayload(
 
 /**
  * Saves one or more renewal records into temp_leads_basics using
- * the standard onConflict: 'policy_number,renewal_date' upsert strategy.
+ * server-gated policies and policy_terms creation/idempotent draft reuse strategy.
+ * Concurrency-Safe: Uses atomic PostgreSQL engine-level UPSERTs on conflict targets.
  */
 export async function saveRenewalRecords(supabase: any, payload: any[]) {
+  if (!Array.isArray(payload) || payload.length === 0) {
+    return { data: [], error: null }
+  }
+
+  for (const item of payload) {
+    if (!item.policy_number) continue
+
+    // 1. Check if lead already exists in temp_leads_basics
+    let existingLead: any = null
+    if (item.renewal_date) {
+      const { data } = await supabase
+        .from('temp_leads_basics')
+        .select('id, policy_id, policy_term_id')
+        .eq('policy_number', item.policy_number)
+        .eq('renewal_date', item.renewal_date)
+        .maybeSingle()
+      existingLead = data
+    }
+
+    // 2. Resolve or create master policy in public.policies atomically using onConflict: 'policy_number'
+    let policyId: string | null = existingLead?.policy_id || item.policy_id || null
+
+    if (!policyId) {
+      const { data: masterPolicy, error: polErr } = await supabase
+        .from('policies')
+        .upsert(
+          {
+            policy_number: item.policy_number,
+            policy_type: item.policy_type || null,
+            insurance_category: item.insurence_category || 'personal',
+            status: 'Active',
+          },
+          { onConflict: 'policy_number' }
+        )
+        .select('id')
+        .single()
+
+      if (polErr || !masterPolicy) {
+        throw new Error(`Failed to resolve master policy record: ${polErr?.message}`)
+      }
+      policyId = masterPolicy.id
+    }
+
+    // 3. Resolve or create draft term in public.policy_terms
+    let termId: string | null = existingLead?.policy_term_id || item.policy_term_id || null
+
+    if (termId) {
+      // Existing lead has a linked term - check if it is a Quoted draft and update in-place
+      const { data: existingTerm } = await supabase
+        .from('policy_terms')
+        .select('id, term_status')
+        .eq('id', termId)
+        .maybeSingle()
+
+      if (existingTerm && existingTerm.term_status === 'Quoted') {
+        await supabase
+          .from('policy_terms')
+          .update({
+            carrier: item.carrier,
+            policy_number: item.policy_number,
+            written_premium: item.current_premium,
+            expiration_date: item.renewal_date,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', termId)
+      }
+    } else {
+      // Fetch latest term for this policy to determine sequence & reuse for same expiration date
+      const { data: latestTerm } = await supabase
+        .from('policy_terms')
+        .select('id, term_sequence, term_status, expiration_date')
+        .eq('policy_id', policyId)
+        .order('term_sequence', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      let targetSequence = 1
+      if (latestTerm) {
+        if (latestTerm.expiration_date === item.renewal_date) {
+          targetSequence = latestTerm.term_sequence
+        } else {
+          targetSequence = latestTerm.term_sequence + 1
+        }
+      }
+
+      let effectiveDate: string | null = null
+      if (item.renewal_date) {
+        const d = new Date(item.renewal_date)
+        if (!isNaN(d.getTime())) {
+          d.setFullYear(d.getFullYear() - 1)
+          effectiveDate = d.toISOString().split('T')[0]
+        }
+      }
+
+      const { data: draftTerm, error: termErr } = await supabase
+        .from('policy_terms')
+        .upsert(
+          {
+            policy_id: policyId,
+            term_sequence: targetSequence,
+            term_status: 'Quoted',
+            carrier: item.carrier,
+            policy_number: item.policy_number,
+            written_premium: item.current_premium,
+            effective_date: effectiveDate,
+            expiration_date: item.renewal_date,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'policy_id,term_sequence' }
+        )
+        .select('id')
+        .single()
+
+      if (termErr || !draftTerm) {
+        throw new Error(`Failed to resolve draft policy term: ${termErr?.message}`)
+      }
+      termId = draftTerm.id
+    }
+
+    item.policy_id = policyId
+    item.policy_term_id = termId
+  }
+
   return await supabase.from('temp_leads_basics').upsert(payload, {
     onConflict: 'policy_number,renewal_date',
   })

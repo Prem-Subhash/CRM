@@ -7,6 +7,8 @@ export async function proxy(request: NextRequest) {
         request: { headers: request.headers },
     })
 
+    const isRememberMeFalse = request.cookies.get('sb-remember-me')?.value === 'false'
+
     // 1. Standard Client for User Auth
     const supabase = createServerClient(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -23,9 +25,14 @@ export async function proxy(request: NextRequest) {
                             headers: request.headers,
                         },
                     })
-                    cookiesToSet.forEach(({ name, value, options }) =>
-                        response.cookies.set(name, value, options)
-                    )
+                    cookiesToSet.forEach(({ name, value, options }) => {
+                        const cookieOpts = { ...options }
+                        if (isRememberMeFalse && value !== '') {
+                            delete cookieOpts.maxAge
+                            delete cookieOpts.expires
+                        }
+                        response.cookies.set(name, value, cookieOpts)
+                    })
                 },
             },
         }
@@ -62,6 +69,25 @@ export async function proxy(request: NextRequest) {
         return redirectResponse
     }
 
+    // Protected Insurance CRM API routes protection
+    const protectedApiRoutes = [
+        '/api/superadmin',
+        '/api/reports',
+        '/api/accounting',
+        '/api/assign-lead',
+        '/api/update-client',
+        '/api/update-stage',
+        '/api/update-history',
+        '/api/send-email',
+        '/api/documents'
+    ]
+    const isProtectedApiRoute = protectedApiRoutes.some((route) => pathname.startsWith(route))
+
+    const authHeader = request.headers.get('authorization')
+    if (isProtectedApiRoute && !user && (!authHeader || !authHeader.startsWith('Bearer '))) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     // Role Route Protections
     const protectedRoutes = ['/csr', '/admin', '/accounting', '/superadmin', '/dashboard', '/lending', '/accurate_lending', '/mortgage']
     const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route))
@@ -78,21 +104,33 @@ export async function proxy(request: NextRequest) {
             return redirectResponse
         }
 
-        // Fetch profile with Case-Insensitive fallback and portal_access
+        // Fetch profile with Case-Insensitive fallback, portal_access, and is_active
         let { data: profile, error: profileError } = await supabaseAdmin
             .from('profiles')
-            .select('role, portal_access')
+            .select('role, portal_access, is_active')
             .eq('id', user.id)
             .single()
 
         if (profileError) {
-            // Defensive fallback if portal_access column has not been migrated yet
+            // Defensive fallback if columns have not been migrated yet
             const fallback = await supabaseAdmin
                 .from('profiles')
                 .select('role')
                 .eq('id', user.id)
                 .single()
-            profile = { ...fallback.data, portal_access: [] }
+            profile = { ...fallback.data, portal_access: [], is_active: true }
+        }
+
+        if (profile && profile.is_active === false) {
+            console.warn(`[MIDDLEWARE] Access attempt by deactivated user ${user.id}`)
+            const loginUrl = (pathname.startsWith('/lending') || pathname.startsWith('/accurate_lending'))
+                ? '/lending/login?deactivated=true'
+                : (pathname.startsWith('/mortgage') ? '/mortgage/login?deactivated=true' : '/login?deactivated=true')
+            const redirectResponse = NextResponse.redirect(new URL(loginUrl, request.url))
+            response.cookies.getAll().forEach(cookie => {
+                redirectResponse.cookies.set(cookie.name, '', { maxAge: 0 })
+            })
+            return redirectResponse
         }
 
         const role = profile?.role?.toLowerCase()

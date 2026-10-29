@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Landmark,
   Plus,
@@ -54,21 +54,14 @@ export default function SectionELenderInfo({
   onChange
 }: SectionELenderInfoProps) {
   const [blocks, setBlocks] = useState<LenderBlockData[]>(
-    initialBlocks && initialBlocks.length > 0
-      ? initialBlocks
-      : [
-          {
-            id: 'lender-block-1',
-            lenderBank: 'American Commercial Bank & Trust',
-            bankOfficerName: 'Robert Jenkins (SBA Officer)',
-            bankUnderwriterName: 'Michael Chang (VP Underwriting)',
-            titleAgencyName: 'First American Title & Escrow Co.',
-            bankClosingAgentName: 'Sarah Jenkins (Closing Counsel)',
-            contactEmail: 'mchang@amcombank.com',
-            contactPhone: '(312) 888-4321'
-          }
-        ]
+    initialBlocks && initialBlocks.length > 0 ? initialBlocks : []
   )
+
+  useEffect(() => {
+    if (initialBlocks) {
+      setBlocks(initialBlocks)
+    }
+  }, [initialBlocks])
 
   // Quick Action "+ Add Bank" modal/input state
   const [isAddBankModalOpen, setIsAddBankModalOpen] = useState(false)
@@ -84,7 +77,7 @@ export default function SectionELenderInfo({
     if (onChange) onChange(nextBlocks)
   }
 
-  // Requirement 3: Every click on "+ Add More" duplicates the complete lender information block
+  // Requirement 3: Every click on "+ Add More" duplicates or adds a complete lender information block
   const handleAddMore = () => {
     const lastBlock = blocks[blocks.length - 1]
     const newBlock: LenderBlockData = lastBlock
@@ -95,7 +88,7 @@ export default function SectionELenderInfo({
         }
       : {
           id: `lender-block-${Date.now()}`,
-          lenderBank: 'Byline Bank',
+          lenderBank: PREDEFINED_BANKS[0] || 'American Commercial Bank & Trust',
           bankOfficerName: '',
           bankUnderwriterName: '',
           titleAgencyName: '',
@@ -107,15 +100,11 @@ export default function SectionELenderInfo({
     const nextBlocks = [...blocks, newBlock]
     setBlocks(nextBlocks)
     if (onChange) onChange(nextBlocks)
-    toast('Duplicated complete lender information block', 'success')
+    toast(lastBlock ? 'Duplicated complete lender information block' : 'Added lender information block', 'success')
   }
 
   // Requirement 5: Allow removing dynamically added lender blocks
   const handleRemoveBlock = (id: string) => {
-    if (blocks.length === 1) {
-      toast('At least one Lender Information block should remain', 'warning')
-      return
-    }
     const nextBlocks = blocks.filter((b) => b.id !== id)
     setBlocks(nextBlocks)
     if (onChange) onChange(nextBlocks)
@@ -272,11 +261,30 @@ export default function SectionELenderInfo({
 
         {/* Dynamic Lender Information Blocks */}
         <div className="space-y-6">
-          {blocks.map((block, index) => (
-            <div
-              key={block.id}
-              className="bg-slate-50/70 border border-gray-200 rounded-2xl p-6 shadow-2xs space-y-5 transition-all hover:border-slate-300"
-            >
+          {blocks.length === 0 ? (
+            <div className="p-8 text-center border-2 border-dashed border-gray-200 rounded-2xl bg-slate-50/50 space-y-3">
+              <div className="w-12 h-12 rounded-full bg-emerald-50 text-[#10B889] flex items-center justify-center mx-auto">
+                <Landmark size={24} />
+              </div>
+              <h4 className="text-sm font-bold text-slate-800">No Participating Lenders Assigned</h4>
+              <p className="text-xs text-slate-500 max-w-md mx-auto">
+                No lender banking institutions are currently attached to this commercial loan file. Click <strong className="text-slate-700">+ Add Bank</strong> or <strong className="text-slate-700">+ Add First Lender</strong> to assign participating financial institutions.
+              </p>
+              <button
+                type="button"
+                onClick={handleAddMore}
+                className="px-4 py-2 bg-white border border-gray-300 hover:border-[#10B889] text-slate-700 hover:text-[#10B889] text-xs font-bold rounded-xl shadow-xs transition-all inline-flex items-center gap-1.5"
+              >
+                <Plus size={14} />
+                <span>+ Add First Lender</span>
+              </button>
+            </div>
+          ) : (
+            blocks.map((block, index) => (
+              <div
+                key={block.id}
+                className="bg-slate-50/70 border border-gray-200 rounded-2xl p-6 shadow-2xs space-y-5 transition-all hover:border-slate-300"
+              >
               {/* Block Header */}
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-200/80">
                 <div className="flex items-center gap-2.5">
@@ -444,7 +452,7 @@ export default function SectionELenderInfo({
                 </div>
               </div>
             </div>
-          ))}
+          )))}
         </div>
 
         {/* Requirement 2 & 3: "+ Add More" button below Section E */}

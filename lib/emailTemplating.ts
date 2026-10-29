@@ -1,4 +1,5 @@
 import { formatCurrency } from './currency';
+import { formatDateOnly } from '@/utils/dateHelper';
 
 export interface EmailTemplate {
   id: string;
@@ -240,7 +241,7 @@ export function replaceTemplate(templateKey: string, templateString: string, dat
     combined_types: combinedTypes,
     eff_date: data.effDate || '',
     effective_date: data.effDate || '',
-    renewal_date: leadData?.renewal_date ? new Date(leadData.renewal_date).toLocaleDateString() : data.effDate || '',
+    renewal_date: leadData?.renewal_date ? formatDateOnly(leadData.renewal_date) : data.effDate || '',
     single_carrier: data.singleCarrier || activeCarrier || '',
     manual_year: data.manualYear || '',
     dynamic_sections: dynamicSections,

@@ -75,6 +75,10 @@ export async function authenticateApiRequest(req: Request, allowedRoles?: UserRo
         return { error: 'Forbidden', status: 403 }
     }
 
+    if (userProfile && userProfile.is_active === false && requireAuth) {
+        return { error: 'Forbidden: Account is deactivated', status: 403 }
+    }
+
     if (allowedRoles && allowedRoles.length > 0 && (!userProfile || !allowedRoles.includes(userProfile.role))) {
         return { error: 'Forbidden', status: 403 }
     }
@@ -98,6 +102,11 @@ export async function authorizeLeadAccess(profile: any, leadId: string) {
 
     if (!canAccessInsuranceCategory(profile, lead.insurence_category)) {
         return { authorized: false, lead: null, error: 'Forbidden: Insufficient category access', status: 403 }
+    }
+
+    // DE02: CSR users may only access leads currently assigned to them
+    if (profile.role === 'csr' && lead.assigned_csr !== profile.id) {
+        return { authorized: false, lead: null, error: 'Forbidden: Lead is not assigned to you', status: 403 }
     }
 
     return { authorized: true, lead, error: null, status: 200 }

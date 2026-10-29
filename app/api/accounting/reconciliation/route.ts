@@ -9,15 +9,11 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
-    // 3. Fetch leads data from temp_leads_basics
-    const { data: leads, error: fetchError } = await supabaseServer
-      .from('temp_leads_basics')
-      .select('accounting_status, expected_commission, actual_commission')
-
-    if (fetchError) {
-      console.error('Fetch reconciliation stats failed:', fetchError)
-      return NextResponse.json({ error: 'Failed to fetch reconciliation statistics' }, { status: 500 })
-    }
+    // 3. Fetch active term statistics authoritatively from policy_terms
+    const { data: terms, error: fetchError } = await supabaseServer
+      .from('policy_terms')
+      .select('accounting_status, commission_amount, actual_commission')
+      .eq('term_status', 'Active')
 
     let reconciledCount = 0
     let discrepancyCount = 0
@@ -25,19 +21,40 @@ export async function GET(req: Request) {
     let totalExpectedComm = 0
     let totalActualComm = 0
 
-    if (leads) {
-      for (const lead of leads) {
-        const status = lead.accounting_status
+    if (!fetchError && terms && terms.length > 0) {
+      for (const term of terms) {
+        const status = term.accounting_status
         if (status === 'reconciled') {
           reconciledCount++
         } else if (status === 'discrepancy') {
           discrepancyCount++
-        } else if (status === 'unreconciled' || !status || status === 'Pending Verification') {
+        } else if (status === 'unreconciled' || !status || status === 'Pending Verification' || status === 'Unreconciled') {
           unreconciledCount++
         }
 
-        totalExpectedComm += Number(lead.expected_commission) || 0
-        totalActualComm += Number(lead.actual_commission) || 0
+        totalExpectedComm += Number(term.commission_amount) || 0
+        totalActualComm += Number(term.actual_commission) || 0
+      }
+    } else {
+      // Fallback to temp_leads_basics if policy_terms is not populated
+      const { data: leads } = await supabaseServer
+        .from('temp_leads_basics')
+        .select('accounting_status, expected_commission, actual_commission')
+
+      if (leads) {
+        for (const lead of leads) {
+          const status = lead.accounting_status
+          if (status === 'reconciled') {
+            reconciledCount++
+          } else if (status === 'discrepancy') {
+            discrepancyCount++
+          } else if (status === 'unreconciled' || !status || status === 'Pending Verification') {
+            unreconciledCount++
+          }
+
+          totalExpectedComm += Number(lead.expected_commission) || 0
+          totalActualComm += Number(lead.actual_commission) || 0
+        }
       }
     }
 

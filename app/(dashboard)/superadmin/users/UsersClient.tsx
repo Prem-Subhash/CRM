@@ -14,6 +14,7 @@ type UserProfile = {
   role: string;
   created_at: string;
   insurance_access: string[];
+  is_active?: boolean;
 };
 
 export default function UsersClient() {
@@ -50,22 +51,38 @@ export default function UsersClient() {
     }
   };
 
-  const handleDelete = async (id: string) => {
+  const handleToggleStatus = async (id: string, currentIsActive?: boolean) => {
+    const isCurrentlyActive = currentIsActive !== false;
+    const actionName = isCurrentlyActive ? "deactivate" : "reactivate";
+
     if (
       !confirm(
-        "Are you sure you want to delete this user? This action cannot be undone.",
+        `Are you sure you want to ${actionName} this user? ${
+          isCurrentlyActive
+            ? "The user will lose access, but historical lead assignments and audit logs will remain intact."
+            : "The user will regain access to their account."
+        }`
       )
     )
       return;
 
     try {
       setError(null);
-      const res = await fetch(`/api/superadmin/users?id=${id}`, {
-        method: "DELETE",
-      });
+      let res;
+      if (isCurrentlyActive) {
+        res = await fetch(`/api/superadmin/users?id=${id}`, {
+          method: "DELETE",
+        });
+      } else {
+        res = await fetch("/api/superadmin/users", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, is_active: true }),
+        });
+      }
       const j = await res.json();
       if (j.error) throw new Error(j.error);
-      toast("User deleted successfully!", "success");
+      toast(`User ${isCurrentlyActive ? "deactivated" : "reactivated"} successfully!`, "success");
       fetchUsers();
     } catch (err: any) {
       setError(err.message);
@@ -313,11 +330,15 @@ export default function UsersClient() {
                           <Edit2 size={15} /> Edit Role
                         </button>
                         <button
-                          onClick={() => handleDelete(user.id)}
-                          className="px-3 py-1.5 text-xs text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition flex items-center justify-center gap-1 border border-red-100"
-                          title="Delete User"
+                          onClick={() => handleToggleStatus(user.id, user.is_active)}
+                          className={`px-3 py-1.5 text-xs font-medium rounded-lg transition flex items-center justify-center gap-1 border ${
+                            user.is_active !== false
+                              ? "text-rose-600 bg-rose-50 hover:bg-rose-100 border-rose-100"
+                              : "text-emerald-600 bg-emerald-50 hover:bg-emerald-100 border-emerald-100"
+                          }`}
+                          title={user.is_active !== false ? "Deactivate User" : "Reactivate User"}
                         >
-                          <Trash2 size={15} />
+                          {user.is_active !== false ? "Deactivate" : "Reactivate"}
                         </button>
                       </div>
                     )}
@@ -343,6 +364,9 @@ export default function UsersClient() {
                   Role
                 </th>
                 <th className="p-4 font-bold text-white text-[10px] uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="p-4 font-bold text-white text-[10px] uppercase tracking-wider">
                   Created At
                 </th>
                 <th className="p-4 font-bold text-white text-[10px] uppercase tracking-wider text-right">
@@ -353,7 +377,7 @@ export default function UsersClient() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="p-0">
+                  <td colSpan={6} className="p-0">
                     <Loading message="Synchronizing users..." />
                   </td>
                 </tr>
@@ -480,6 +504,15 @@ export default function UsersClient() {
                         </div>
                       )}
                     </td>
+                    <td className="p-4">
+                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border ${
+                        user.is_active !== false 
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                          : 'bg-rose-50 text-rose-700 border-rose-200'
+                      }`}>
+                        {user.is_active !== false ? 'Active' : 'Inactive'}
+                      </span>
+                    </td>
                     <td className="p-4 text-gray-400 text-[10px] font-mono">
                       {new Date(user.created_at).toLocaleDateString()}
                     </td>
@@ -521,11 +554,15 @@ export default function UsersClient() {
                               <Edit2 size={15} /> Edit Role
                             </button>
                             <button
-                              onClick={() => handleDelete(user.id)}
-                              className="p-1.5 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition border border-red-100"
-                              title="Delete User"
+                              onClick={() => handleToggleStatus(user.id, user.is_active)}
+                              className={`px-3 py-1.5 text-xs font-medium rounded-lg transition flex items-center justify-center gap-1 border ${
+                                user.is_active !== false
+                                  ? "text-rose-600 bg-rose-50 hover:bg-rose-100 border-rose-100"
+                                  : "text-emerald-600 bg-emerald-50 hover:bg-emerald-100 border-emerald-100"
+                              }`}
+                              title={user.is_active !== false ? "Deactivate User" : "Reactivate User"}
                             >
-                              <Trash2 size={16} />
+                              {user.is_active !== false ? "Deactivate" : "Reactivate"}
                             </button>
                           </div>
                         )}
@@ -537,7 +574,7 @@ export default function UsersClient() {
               {!loading && users.length === 0 && (
                 <tr>
                   <td
-                    colSpan={5}
+                    colSpan={6}
                     className="p-12 text-center text-gray-400 text-sm font-bold"
                   >
                     No users found in the system.

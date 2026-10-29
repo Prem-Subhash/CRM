@@ -91,9 +91,15 @@ export function CommercialRenewalForm({ assignedCsrId, onSuccess, onCancel }: Co
         false
       )
 
-      const { error } = await saveRenewalRecords(supabase, [payload])
-      if (error) {
-        throw new Error(error.message)
+      const response = await fetch('/api/renewals/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category: 'commercial', payload: [payload] }),
+      })
+
+      const resData = await response.json()
+      if (!response.ok || resData.error) {
+        throw new Error(resData.error || 'Failed to create renewal record.')
       }
 
       toast('Commercial renewal policy created successfully!', 'success')

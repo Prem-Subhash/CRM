@@ -39,10 +39,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'accountingVerified must be a boolean' }, { status: 400 })
     }
 
-    // 4. Fetch current lead state to log differences (Audit Logging)
+    // 4. Fetch current lead state and active policy_term to log differences & update authoritatively
     const { data: currentLead, error: fetchError } = await supabaseServer
       .from('temp_leads_basics')
       .select(`
+        id,
+        policy_id,
+        policy_term_id,
         expected_commission,
         actual_commission,
         accounting_status,
@@ -51,7 +54,20 @@ export async function POST(req: Request) {
         verified_by,
         verified_at,
         carrier_payment_date,
-        commission_received_date
+        commission_received_date,
+        policy_terms:policy_terms!policy_term_id (
+          id,
+          policy_id,
+          term_sequence,
+          term_status,
+          commission_amount,
+          actual_commission,
+          accounting_status,
+          accounting_verified,
+          accounting_notes,
+          carrier_payment_date,
+          commission_received_date
+        )
       `)
       .eq('id', leadId)
       .single()
@@ -60,6 +76,9 @@ export async function POST(req: Request) {
       console.error('Fetch lead failed:', fetchError)
       return NextResponse.json({ error: 'Lead not found' }, { status: 404 })
     }
+
+    const activeTerm = currentLead.policy_terms?.find((t: any) => t.id === currentLead.policy_term_id || t.term_status === 'Active')
+    const activeTermId = activeTerm?.id || currentLead.policy_term_id
 
     // 5. Build dynamic update payload
     const updatePayload: any = {}
@@ -79,7 +98,27 @@ export async function POST(req: Request) {
     if (carrierPaymentDate !== undefined) updatePayload.carrier_payment_date = carrierPaymentDate || null
     if (commissionReceivedDate !== undefined) updatePayload.commission_received_date = commissionReceivedDate || null
 
-    // 6. Update database record (bypasses RLS for system mutation)
+    // 6. Authoritative update to policy_terms (Active term ONLY)
+    if (activeTermId) {
+      const termPayload = { ...updatePayload, updated_at: new Date().toISOString() }
+      const { data: updatedTerms, error: termErr } = await supabaseServer
+        .from('policy_terms')
+        .update(termPayload)
+        .eq('id', activeTermId)
+        .eq('term_status', 'Active')
+        .select('id')
+
+      if (termErr) {
+        console.error('Update policy_terms failed in verify-policy:', termErr)
+        return NextResponse.json({ error: 'Failed to update authoritative policy term' }, { status: 500 })
+      }
+
+      if (!updatedTerms || updatedTerms.length === 0) {
+        return NextResponse.json({ error: 'Target policy term is no longer active or was modified concurrently' }, { status: 409 })
+      }
+    }
+
+    // Operational mirror update on temp_leads_basics
     const { error: updateError } = await supabaseServer
       .from('temp_leads_basics')
       .update(updatePayload)
@@ -90,21 +129,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Failed to update policy verification status' }, { status: 500 })
     }
 
-    // 7. Insert Audit Logs into accounting_logs
-    const newActualCommission = updatePayload.actual_commission !== undefined ? updatePayload.actual_commission : currentLead.actual_commission
-    const newStatus = updatePayload.accounting_status !== undefined ? updatePayload.accounting_status : currentLead.accounting_status
-    const logNotes = updatePayload.accounting_notes !== undefined ? updatePayload.accounting_notes : currentLead.accounting_notes
+    // 7. Insert Audit Logs into accounting_logs (including lead_id, policy_id, policy_term_id)
+    const oldExpected = Number(activeTerm?.commission_amount ?? currentLead.expected_commission) || 0
+    const oldActual = Number(activeTerm?.actual_commission ?? currentLead.actual_commission) || 0
+    const oldStatus = activeTerm?.accounting_status ?? currentLead.accounting_status
+    const newActualCommission = updatePayload.actual_commission !== undefined ? updatePayload.actual_commission : oldActual
+    const newStatus = updatePayload.accounting_status !== undefined ? updatePayload.accounting_status : oldStatus
+    const logNotes = updatePayload.accounting_notes !== undefined ? updatePayload.accounting_notes : (activeTerm?.accounting_notes || currentLead.accounting_notes)
 
     const { error: logError } = await supabaseServer
       .from('accounting_logs')
       .insert({
         lead_id: leadId,
+        policy_id: currentLead.policy_id || activeTerm?.policy_id || null,
+        policy_term_id: activeTermId || null,
         updated_by: user.id,
-        old_expected_commission: currentLead.expected_commission,
-        new_expected_commission: currentLead.expected_commission, // verify-policy doesn't change expected commission
-        old_actual_commission: currentLead.actual_commission,
+        old_expected_commission: oldExpected,
+        new_expected_commission: oldExpected,
+        old_actual_commission: oldActual,
         new_actual_commission: newActualCommission,
-        old_status: currentLead.accounting_status,
+        old_status: oldStatus,
         new_status: newStatus,
         notes: logNotes,
         created_at: new Date().toISOString()
@@ -112,7 +156,6 @@ export async function POST(req: Request) {
 
     if (logError) {
       console.error('Failed to write audit logs to accounting_logs:', logError)
-      // Do not block response since database update was completed successfully
     }
 
     return NextResponse.json({ success: true, message: 'Policy verification status updated successfully.' })

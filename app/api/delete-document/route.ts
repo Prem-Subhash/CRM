@@ -19,7 +19,7 @@ export async function POST(req: Request) {
              return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
         }
 
-        // 0.5 Authorize Lead Access (if CSR is deleting)
+        // 0.5 Authorize Lead Access (if CSR is deleting) or verify intakeFormId ownership (if unauthenticated public client)
         if (user) {
             let authLeadId = null
             
@@ -40,6 +40,20 @@ export async function POST(req: Request) {
                 if (!authLead.authorized) {
                     return NextResponse.json({ error: authLead.error }, { status: authLead.status })
                 }
+            }
+        } else {
+            if (!intakeFormId) {
+                return NextResponse.json({ error: 'Unauthorized: Missing intakeFormId' }, { status: 401 })
+            }
+
+            const { data: doc, error: docErr } = await supabaseServer
+                .from('uploaded_documents')
+                .select('intake_form_id')
+                .eq('id', documentId)
+                .maybeSingle()
+
+            if (docErr || !doc || doc.intake_form_id !== intakeFormId) {
+                return NextResponse.json({ error: 'Forbidden: Document does not belong to specified intake form' }, { status: 403 })
             }
         }
 

@@ -117,7 +117,7 @@ export async function PATCH(request: Request) {
 
     try {
         const body = await request.json();
-        const { id, role, insurance_access } = body;
+        const { id, role, insurance_access, is_active } = body;
 
         if (!id) return NextResponse.json({ error: 'User ID is required' }, { status: 400 });
 
@@ -130,6 +130,7 @@ export async function PATCH(request: Request) {
 
         const updatePayload: any = {};
         if (role !== undefined) updatePayload.role = role;
+        if (is_active !== undefined) updatePayload.is_active = Boolean(is_active);
         
         // Validate insurance access payload
         if (insurance_access !== undefined) {
@@ -158,9 +159,10 @@ export async function PATCH(request: Request) {
         if (error) throw new Error(error.message);
 
         // Audit log
+        const auditAction = is_active === false ? 'DEACTIVATE_USER' : is_active === true ? 'REACTIVATE_USER' : 'UPDATE_USER';
         await supabaseAdmin.from('audit_logs').insert({
             user_id: auth.user.id,
-            action: 'UPDATE_USER',
+            action: auditAction,
             entity: 'profiles',
             entity_id: id,
             metadata: updatePayload
@@ -181,28 +183,25 @@ export async function DELETE(request: Request) {
         const id = searchParams.get('id');
         if (!id) throw new Error('User ID is required');
 
-        // Note: Check if they are trying to delete themselves to prevent accidental lockout
+        // Prevent self-deactivation to avoid accidental lockout
         if (id === auth.user.id) {
-            throw new Error('You cannot delete your own account.');
+            throw new Error('You cannot deactivate your own account.');
         }
 
-        // Delete from profiles first to ensure no foreign key issues
-        await supabaseAdmin.from('profiles').delete().eq('id', id);
-
-        // Delete from Auth
-        const { error } = await supabaseAdmin.auth.admin.deleteUser(id);
+        // Soft deactivation: set profiles.is_active = false (preserve profiles row and auth user)
+        const { error } = await supabaseAdmin.from('profiles').update({ is_active: false }).eq('id', id);
         if (error) throw new Error(error.message);
 
         // Audit log
         await supabaseAdmin.from('audit_logs').insert({
             user_id: auth.user.id,
-            action: 'DELETE_USER',
+            action: 'DEACTIVATE_USER',
             entity: 'profiles',
             entity_id: id,
-            metadata: { deleted_user_id: id }
+            metadata: { deactivated_user_id: id }
         });
 
-        return NextResponse.json({ success: true });
+        return NextResponse.json({ success: true, message: 'User deactivated successfully' });
     } catch (error: any) {
         return NextResponse.json({ error: error.message }, { status: 500 });
     }

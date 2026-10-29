@@ -66,13 +66,14 @@ export default function PipelineClient({ pipelines, stages, stageCounts, targetP
 
     const filteredLeads = stagedLeads.filter((lead: any) => {
         const term = searchTerm.toLowerCase()
-        const normalizedSearchTerm = normalizePhoneSearch(searchTerm)
+        const termDigits = extractDigits(searchTerm)
         const dbPhoneStr = lead.phone || ''
 
         return (
             lead.client_name?.toLowerCase().includes(term) ||
             lead.email?.toLowerCase().includes(term) ||
-            (dbPhoneStr.includes(term) || extractDigits(dbPhoneStr).includes(extractDigits(term))) ||
+            dbPhoneStr.includes(term) ||
+            (termDigits.length > 0 && extractDigits(dbPhoneStr).includes(termDigits)) ||
             lead.assigned_csr_profile?.full_name?.toLowerCase().includes(term)
         )
     })

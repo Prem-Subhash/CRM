@@ -12,14 +12,30 @@ export async function POST(req: Request) {
         const user = auth.user
 
         // 2. Parse FormData
-        const formData = await req.formData()
+        let formData: FormData
+        try {
+            formData = await req.formData()
+        } catch {
+            return NextResponse.json({ error: 'Invalid form data. Multipart request expected' }, { status: 400 })
+        }
         const file = formData.get('file') as File | null
         const leadId = formData.get('leadId') as string | null
         const intakeFormId = formData.get('intakeFormId') as string | null
 
-        // Allowed: User is signed in OR they have an explicit intakeFormId (Client uploading documents)
-        if (!user && !intakeFormId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        // Allowed: User is signed in OR they have an explicit, valid intakeFormId (Client uploading documents)
+        if (!user) {
+            if (!intakeFormId) {
+                return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+            }
+            const { data: intake, error: intakeErr } = await supabaseServer
+                .from('temp_intake_forms')
+                .select('id')
+                .eq('id', intakeFormId)
+                .maybeSingle()
+
+            if (intakeErr || !intake) {
+                return NextResponse.json({ error: 'Invalid or non-existent intakeFormId' }, { status: 401 })
+            }
         }
 
         if (!file) {

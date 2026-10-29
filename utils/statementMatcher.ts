@@ -19,11 +19,25 @@ export interface StatementRow {
 
 export interface CandidateRecord extends PolicyRecord {
   id: string;
+  policy_id?: string | null;
+  policy_term_id?: string | null;
   client_name?: string | null;
   expected_commission?: number | string | null;
   actual_commission?: number | string | null;
   accounting_status?: string | null;
   accounting_verified?: boolean | null;
+  policy_terms?: Array<{
+    id?: string;
+    policy_id?: string;
+    term_sequence?: number;
+    term_status?: string;
+    policy_number?: string | null;
+    carrier?: string | null;
+    written_premium?: number | null;
+    expected_commission?: number | null;
+    actual_commission?: number | null;
+    accounting_status?: string | null;
+  }>;
 }
 
 export interface PreviewMatchResult {
@@ -95,22 +109,41 @@ export function evaluateMatch(
   let isHistoricalMatch = false;
 
   for (const candidate of candidates) {
-    const activeInfo = getActivePolicy(candidate);
-    const activePolicyNorm = normalizePolicyNumber(activeInfo.activePolicyNumber);
-    const oldPolicyNorm = normalizePolicyNumber(candidate.policy_number);
+    const terms = candidate.policy_terms;
+    
+    if (terms && terms.length > 0) {
+      let candidateHasActiveMatch = false;
+      for (const term of terms) {
+        const termPolicyNorm = normalizePolicyNumber(term.policy_number);
+        if (termPolicyNorm === statementPolicyNorm) {
+          if (term.term_status === 'Active') {
+            candidateHasActiveMatch = true;
+          } else if (term.term_status === 'Renewed' || term.term_status === 'Expired') {
+            isHistoricalMatch = true;
+          }
+        }
+      }
+      if (candidateHasActiveMatch) {
+        activeMatches.push(candidate);
+      }
+    } else {
+      // Legacy fallback via activePolicyHelper
+      const activeInfo = getActivePolicy(candidate);
+      const activePolicyNorm = normalizePolicyNumber(activeInfo.activePolicyNumber);
+      const oldPolicyNorm = normalizePolicyNumber(candidate.policy_number);
 
-    if (activePolicyNorm === statementPolicyNorm) {
-      activeMatches.push(candidate);
-    } else if (activeInfo.isSwitched && oldPolicyNorm === statementPolicyNorm) {
-      // It matches the old policy, but the policy was switched!
-      isHistoricalMatch = true;
+      if (activePolicyNorm === statementPolicyNorm) {
+        activeMatches.push(candidate);
+      } else if (activeInfo.isSwitched && oldPolicyNorm === statementPolicyNorm) {
+        isHistoricalMatch = true;
+      }
     }
   }
 
   if (activeMatches.length === 0) {
     if (isHistoricalMatch) {
       result.status = 'HISTORICAL_POLICY';
-      result.reason = 'Matches an old policy of a switched renewal (new policy active)';
+      result.reason = 'Matches an old policy of a switched/renewed policy term (new term active)';
     }
     return result;
   }
@@ -124,17 +157,21 @@ export function evaluateMatch(
   // Exactly one active match
   const match = activeMatches[0];
   const activeInfo = getActivePolicy(match);
-  
-  const expectedComm = Number(match.expected_commission) || 0;
+
+  // Active term details resolution
+  const activeTerm = match.policy_terms?.find(t => t.term_status === 'Active');
+  const activePolicyNum = activeTerm?.policy_number || activeInfo.activePolicyNumber;
+  const activeCarrierName = activeTerm?.carrier || activeInfo.activeCarrier;
+  const expectedComm = Number(activeTerm?.expected_commission ?? match.expected_commission) || 0;
   
   result.matchedLeadId = match.id;
   result.clientName = match.client_name ?? null;
-  result.activeDbPolicyNumber = activeInfo.activePolicyNumber;
-  result.activeDbCarrier = activeInfo.activeCarrier;
+  result.activeDbPolicyNumber = activePolicyNum;
+  result.activeDbCarrier = activeCarrierName;
   result.expectedCommission = expectedComm;
   result.variance = expectedComm - actualComm; // Expected - Actual
   
-  const carrierAgrees = isCarrierAgreement(statementCarrier, activeInfo.activeCarrier);
+  const carrierAgrees = isCarrierAgreement(statementCarrier, activeCarrierName);
 
   if (carrierAgrees) {
     result.status = 'EXACT_MATCH';

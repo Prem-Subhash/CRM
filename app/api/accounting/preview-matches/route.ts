@@ -24,6 +24,8 @@ export async function POST(req: Request) {
       .from('temp_leads_basics')
       .select(`
         id,
+        policy_id,
+        policy_term_id,
         client_name,
         carrier,
         new_carrier,
@@ -36,7 +38,19 @@ export async function POST(req: Request) {
         expected_commission,
         actual_commission,
         accounting_status,
-        accounting_verified
+        accounting_verified,
+        policy_terms:policy_terms!policy_term_id (
+          id,
+          policy_id,
+          term_sequence,
+          term_status,
+          policy_number,
+          carrier,
+          written_premium,
+          expected_commission,
+          actual_commission,
+          accounting_status
+        )
       `)
 
     if (fetchError) {
